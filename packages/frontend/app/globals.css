@@ -1,0 +1,51 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body {
+  background-color: #101e33;
+  color: #edeae1;
+}
+
+::selection {
+  background-color: #ad8a54;
+  color: #101e33;
+}
+
+/* Dashed "ticket tear" separator used between filter line items. */
+.tear {
+  background-image: repeating-linear-gradient(
+    to right,
+    rgba(16, 30, 51, 0.35) 0,
+    rgba(16, 30, 51, 0.35) 6px,
+    transparent 6px,
+    transparent 12px
+  );
+  height: 1px;
+}
+
+@keyframes stamp-in {
+  0% {
+    transform: scale(1.4) rotate(-8deg);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(0.95) rotate(-8deg);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1) rotate(-8deg);
+    opacity: 1;
+  }
+}
+
+.stamp {
+  animation: stamp-in 240ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stamp {
+    animation: none;
+  }
+}
