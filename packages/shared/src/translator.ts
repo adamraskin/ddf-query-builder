@@ -12,7 +12,7 @@ export interface TranslatorOptions {
   baseUrl: string;
 }
 
-const DEFAULT_TOP = 25;
+const DEFAULT_TOP = 20;
 
 /** Maps our internal operator vocabulary to OData filter syntax. */
 function operatorToOData(operator: DdfFilter['operator']): string {
