@@ -27,15 +27,15 @@ body {
 
 @keyframes stamp-in {
   0% {
-    transform: scale(1.4) rotate(-8deg);
+    transform: scale(1.4);
     opacity: 0;
   }
   60% {
-    transform: scale(0.95) rotate(-8deg);
+    transform: scale(0.95);
     opacity: 1;
   }
   100% {
-    transform: scale(1) rotate(-8deg);
+    transform: scale(1);
     opacity: 1;
   }
 }

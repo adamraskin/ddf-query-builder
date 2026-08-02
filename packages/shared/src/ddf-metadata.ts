@@ -2,8 +2,8 @@ import { DdfDataType } from './types';
 
 /**
  * This registry is the single source of truth for every field the system
- * understands. The prompt builder , the structured-output
- * schema  and the translator all derive from
+ * understands. The prompt builder, the structured-output
+ * schema and the translator all derive from
  * this file so that adding a field never requires editing prompts by hand.
  */
 

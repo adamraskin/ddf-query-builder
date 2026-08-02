@@ -17,5 +17,12 @@ export const config = {
     apiKey: process.env.LM_STUDIO_API_KEY ?? 'lm-studio',
     model: required('LM_STUDIO_MODEL', 'local-model'),
   },
-  ddfBaseUrl: required('DDF_BASE_URL', 'https://ddfapi.realtor.ca/odata/v1/Property'),
+  ddfBaseUrl: required('DDF_BASE_URL', ''),
+  ddf: {
+    clientId: required('DDF_CLIENT_ID', ''),
+    clientSecret: required('DDF_CLIENT_SECRET', ''),
+    tokenUrl: required('DDF_TOKEN_URL', ''),
+    tokenScope: required('DDF_TOKEN_SCOPE', 'DDFApi_Read'),
+    grantType: required('DDF_GRANT_TYPE', 'client_credentials'),
+  },
 };

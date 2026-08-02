@@ -37,7 +37,7 @@ describe('translateNode', () => {
       }),
     );
     expect(result.url).toBeDefined();
-    expect(result.url).toContain('%24filter');
+    expect(result.url).toContain('$filter');
     expect(result.error).toBeUndefined();
   });
 });

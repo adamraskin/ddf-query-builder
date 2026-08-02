@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 import request from 'supertest';
 
 const invokeMock = vi.fn();
@@ -47,6 +47,43 @@ describe('POST /api/query', () => {
     expect(res.status).toBe(422);
     expect(res.body.ok).toBe(false);
     expect(res.body.error.code).toBe('EXTRACTION_FAILED');
+  });
+});
+
+describe('POST /api/run-url', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('requests an access token and sends it as a bearer header', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: vi.fn().mockResolvedValue({ access_token: 'test-token' }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: { get: (name: string) => (name === 'content-type' ? 'application/json' : null) },
+        text: vi.fn().mockResolvedValue('{"ok":true}'),
+      });
+
+    vi.stubGlobal('fetch', fetchMock);
+
+    const app = createApp();
+    const res = await request(app).post('/api/run-url').send({
+      url: 'https://ddfapi.realtor.ca/odata/v1/Property?$top=5',
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const tokenCall = fetchMock.mock.calls[0];
+    expect(tokenCall[0]).toBe('https://identity.crea.ca/connect/token');
+    expect(tokenCall[1]).toMatchObject({
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    });
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
   });
 });
 

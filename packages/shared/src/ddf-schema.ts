@@ -1,25 +1,9 @@
 import { z } from 'zod';
 import { DDF_FIELD_KEYS, DDF_OPERATORS, getFieldMetadata, isOperatorValidForField } from './ddf-metadata';
 
-/**
- * the structured output contract. This is the only thing the LLM is allowed to produce,
- * and the only thing the translator accepts.
- *
- * Finalized before the translator was built, per the plan's #1 risk
- * mitigation: changing this later ripples through prompts, validation,
- * translator logic, and tests.
- */
-
 const FieldEnum = z.enum(DDF_FIELD_KEYS);
 const OperatorEnum = z.enum(DDF_OPERATORS);
 
-/**
- * The bare shape, with no cross-field refinement. Used when asking the LLM
- * for structured output — some providers/local models handle refined
- * (superRefine) zod schemas poorly when converted to JSON Schema, so we
- * keep the schema we *request* simple, and validate strictly afterward
- * with DdfFilterSchema in the Validate node (Milestone 6).
- */
 export const DdfFilterShape = z.object({
   field: FieldEnum,
   operator: OperatorEnum,
@@ -27,47 +11,46 @@ export const DdfFilterShape = z.object({
 });
 
 export const DdfFilterSchema = DdfFilterShape.superRefine((filter, ctx) => {
-    const meta = getFieldMetadata(filter.field);
-    if (!meta) {
-      // Unreachable given the enum, but kept for defense in depth.
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: `Unknown field: ${filter.field}` });
-      return;
-    }
+  const meta = getFieldMetadata(filter.field);
+  if (!meta) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: `Unknown field: ${filter.field}` });
+    return;
+  }
 
-    if (!isOperatorValidForField(filter.field, filter.operator)) {
+  if (!isOperatorValidForField(filter.field, filter.operator)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: `Operator "${filter.operator}" is not valid for field "${filter.field}". Allowed: ${meta.operators.join(', ')}`,
+      path: ['operator'],
+    });
+  }
+
+  const actualType = typeof filter.value;
+  const expected = meta.dataType;
+  const typeOk =
+    (expected === 'string' && actualType === 'string') ||
+    (expected === 'number' && actualType === 'number') ||
+    (expected === 'boolean' && actualType === 'boolean');
+
+  if (!typeOk) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: `Field "${filter.field}" expects a ${expected} value, got ${actualType}`,
+      path: ['value'],
+    });
+  }
+
+  if (meta.allowedValues && expected === 'string') {
+    const allowed = meta.allowedValues as readonly string[];
+    if (!allowed.includes(filter.value as string)) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: `Operator "${filter.operator}" is not valid for field "${filter.field}". Allowed: ${meta.operators.join(', ')}`,
-        path: ['operator'],
-      });
-    }
-
-    const actualType = typeof filter.value;
-    const expected = meta.dataType;
-    const typeOk =
-      (expected === 'string' && actualType === 'string') ||
-      (expected === 'number' && actualType === 'number') ||
-      (expected === 'boolean' && actualType === 'boolean');
-
-    if (!typeOk) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: `Field "${filter.field}" expects a ${expected} value, got ${actualType}`,
+        message: `Value "${filter.value}" is not one of the allowed values for "${filter.field}": ${allowed.join(', ')}`,
         path: ['value'],
       });
     }
-
-    if (meta.allowedValues && expected === 'string') {
-      const allowed = meta.allowedValues as readonly string[];
-      if (!allowed.includes(filter.value as string)) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: `Value "${filter.value}" is not one of the allowed values for "${filter.field}": ${allowed.join(', ')}`,
-          path: ['value'],
-        });
-      }
-    }
-  });
+  }
+});
 
 export const DdfOrderBySchema = z.object({
   field: FieldEnum,
@@ -88,33 +71,46 @@ export const DdfPaginationSchema = z
     }),
   );
 
-/** Loose version handed to the LLM as its structured-output target (Extract node). */
 export const DdfStructuredQueryShape = z.object({
   filters: z.array(DdfFilterShape).default([]),
   orderBy: z.array(DdfOrderBySchema).default([]),
   pagination: DdfPaginationSchema.default({}),
-  /**
-   * Anything the model recognized as an intended filter but could not map
-   * to a known field/operator/value. Surfaced to the user instead of
-   * silently dropped or silently hallucinated (Risk #4).
-   */
   unsupported: z.array(z.string()).default([]),
 });
 
-/** Strict version used by the Validate node: same shape, but each filter is fully checked. */
-export const DdfStructuredQuerySchema = z.object({
-  filters: z.array(DdfFilterSchema).default([]),
-  orderBy: z.array(DdfOrderBySchema).default([]),
-  pagination: DdfPaginationSchema.default({}),
-  unsupported: z.array(z.string()).default([]),
-});
+export const DdfStructuredQuerySchema = z
+  .object({
+    filters: z.array(DdfFilterSchema).default([]),
+    orderBy: z.array(DdfOrderBySchema).default([]),
+    pagination: DdfPaginationSchema.default({}),
+    unsupported: z.array(z.string()).default([]),
+  })
+  .superRefine((query, ctx) => {
+    const byField = new Map<string, typeof query.filters>();
+    for (const filter of query.filters) {
+      if (filter.operator !== 'eq' && filter.operator !== 'contains') continue;
+      const existing = byField.get(filter.field) ?? [];
+      existing.push(filter);
+      byField.set(filter.field, existing);
+    }
+
+    for (const [field, filters] of byField) {
+      const distinctValues = new Set(filters.map((f) => JSON.stringify(f.value)));
+      if (distinctValues.size > 1) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Field "${field}" has ${distinctValues.size} conflicting conditions ANDed together (this system has no "or" — did the model try to fake one?). This combination can never match anything.`,
+          path: ['filters'],
+        });
+      }
+    }
+  });
 
 export type DdfFilter = z.infer<typeof DdfFilterSchema>;
 export type DdfOrderBy = z.infer<typeof DdfOrderBySchema>;
 export type DdfPagination = z.infer<typeof DdfPaginationSchema>;
 export type DdfStructuredQuery = z.infer<typeof DdfStructuredQuerySchema>;
 
-/** JSON Schema (not Zod) for providers that want a raw schema, e.g. for structured-output APIs. */
 export function ddfStructuredQueryJsonSchema() {
   return {
     name: 'ddf_structured_query',

@@ -2,7 +2,10 @@ import { ChatOpenAI } from '@langchain/openai';
 import { config } from '../config';
 
 /**
- * Client to connect to LM Studio for Inference
+ * LM Studio exposes an OpenAI-compatible /v1/chat/completions endpoint once
+ * you start its local server (Developer tab -> "Start Server" in LM Studio,
+ * or `lms server start`). We talk to it exactly like the OpenAI SDK, just
+ * pointed at a different baseURL with a throwaway API key.
  */
 export function createLmStudioClient(overrides: { temperature?: number } = {}): ChatOpenAI {
   return new ChatOpenAI({

@@ -63,7 +63,7 @@ export function FilterTicket({ query }: { query: DdfStructuredQuery }) {
 
       {hasUnsupported && (
         <div className="px-5 py-4 border-t border-dashed border-rust-500/50 bg-rust-500/5">
-          <div className="stamp inline-block border-2 border-rust-500 text-rust-500 font-display uppercase text-xs tracking-widest px-2 py-1 rotate-[-8deg] mb-2">
+          <div className="stamp inline-block border-2 border-rust-500 text-rust-500 font-display uppercase text-xs tracking-widest px-2 py-1 mb-2">
             Not mapped
           </div>
           <ul className="space-y-1">

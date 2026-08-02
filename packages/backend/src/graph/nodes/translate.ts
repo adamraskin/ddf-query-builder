@@ -3,7 +3,9 @@ import { config } from '../../config';
 import { GraphState } from '../state';
 
 /**
- * Thin wrapper around the deterministic translator. By the
+ * Milestone 6 — Translate Node.
+ *
+ * Thin wrapper around the deterministic translator (Milestone 3). By the
  * time we get here, structuredQuery is guaranteed valid by the Validate
  * node, so this step cannot itself produce a validation error — only a
  * config error (e.g. bad base URL), which is treated as unrecoverable.

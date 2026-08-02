@@ -19,13 +19,22 @@ describe('translator defaults', () => {
   it('produces a valid URL with no filters and default pagination', () => {
     const url = translateToUrl(emptyQuery(), { baseUrl: BASE_URL });
     expect(url).toContain(BASE_URL);
-    expect(url).toContain('%24top=25'); // $top URL-encoded
+    expect(url).toContain('$top=25');
+  });
+
+  it('keeps reserved OData keys literal, never percent-encoded', () => {
+    const url = translateToUrl(
+      emptyQuery({ filters: [{ field: 'City', operator: 'eq', value: 'Ottawa' }] }),
+      { baseUrl: BASE_URL },
+    );
+    expect(url).toContain('$filter=');
+    expect(url).not.toContain('%24');
   });
 
   it('omits $filter and $orderby when not provided', () => {
     const url = translateToUrl(emptyQuery(), { baseUrl: BASE_URL });
-    expect(url).not.toContain('%24filter');
-    expect(url).not.toContain('%24orderby');
+    expect(url).not.toContain('$filter');
+    expect(url).not.toContain('$orderby');
   });
 });
 
@@ -80,7 +89,7 @@ describe('combining multiple filters', () => {
       }),
       { baseUrl: BASE_URL },
     );
-    const decoded = decodeURIComponent(url.replace(/\+/g, ' '));
+    const decoded = decodeURIComponent(url);
     expect(decoded).toContain(
       "$filter=City eq 'Gatineau' and BedroomsTotal ge 3 and PoolYN eq true",
     );
@@ -93,7 +102,7 @@ describe('orderBy', () => {
       emptyQuery({ orderBy: [{ field: 'ListPrice', direction: 'desc' }] }),
       { baseUrl: BASE_URL },
     );
-    const decoded = decodeURIComponent(url.replace(/\+/g, ' '));
+    const decoded = decodeURIComponent(url);
     expect(decoded).toContain('$orderby=ListPrice desc');
   });
 
@@ -107,7 +116,7 @@ describe('orderBy', () => {
       }),
       { baseUrl: BASE_URL },
     );
-    const decoded = decodeURIComponent(url.replace(/\+/g, ' '));
+    const decoded = decodeURIComponent(url);
     expect(decoded).toContain('$orderby=City asc,ListPrice desc');
   });
 });
@@ -117,7 +126,7 @@ describe('pagination', () => {
     const url = translateToUrl(emptyQuery({ pagination: { top: 10, skip: 20 } }), {
       baseUrl: BASE_URL,
     });
-    const decoded = decodeURIComponent(url.replace(/\+/g, ' '));
+    const decoded = decodeURIComponent(url);
     expect(decoded).toContain('$top=10');
     expect(decoded).toContain('$skip=20');
   });
@@ -129,5 +138,24 @@ describe('pagination', () => {
     const withoutCount = translateToUrl(emptyQuery(), { baseUrl: BASE_URL });
     expect(decodeURIComponent(withCount)).toContain('$count=true');
     expect(withoutCount).not.toContain('%24count');
+  });
+});
+
+describe('regression: reserved OData param names must never be percent-encoded', () => {
+  it('produces literal $filter, $orderby, $top, $skip, $count — not %24filter etc.', () => {
+    const url = translateToUrl(
+      emptyQuery({
+        filters: [{ field: 'City', operator: 'eq', value: 'Ottawa' }],
+        orderBy: [{ field: 'ListPrice', direction: 'desc' }],
+        pagination: { top: 10, skip: 5, count: true },
+      }),
+      { baseUrl: BASE_URL },
+    );
+    expect(url).not.toMatch(/%24/);
+    expect(url).toContain('?$filter=');
+    expect(url).toContain('&$orderby=');
+    expect(url).toContain('&$top=10');
+    expect(url).toContain('&$skip=5');
+    expect(url).toContain('&$count=true');
   });
 });

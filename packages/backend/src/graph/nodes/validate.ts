@@ -2,6 +2,8 @@ import { DdfStructuredQuerySchema } from '@ddf/shared';
 import { GraphState } from '../state';
 
 /**
+ * Milestone 5/6 — Validation Node.
+ *
  * Re-validates the extracted output against the strict schema (field
  * exists, operator allowed for that field, value type matches, enum
  * values respected). This is where hallucinated fields/operators/values

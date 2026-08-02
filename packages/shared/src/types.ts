@@ -1,4 +1,5 @@
 /**
+ * Milestone 1 — base shared interfaces.
  * Kept intentionally small; the real domain types live in ddf-metadata.ts
  * and ddf-schema.ts once the DDF domain is defined (Milestone 2).
  */

@@ -2,6 +2,8 @@ import { DdfFilter, DdfOrderBy, DdfPagination, DdfStructuredQuery } from './ddf-
 import { getFieldMetadata } from './ddf-metadata';
 
 /**
+ * Milestone 3 — Translator.
+ *
  * Converts a validated DdfStructuredQuery into a real DDF OData URL.
  * This module has zero AI/LLM dependency: any valid JSON contract
  * produces a valid DDF URL, deterministically.
@@ -12,7 +14,7 @@ export interface TranslatorOptions {
   baseUrl: string;
 }
 
-const DEFAULT_TOP = 20;
+const DEFAULT_TOP = 25;
 
 /** Maps our internal operator vocabulary to OData filter syntax. */
 function operatorToOData(operator: DdfFilter['operator']): string {
@@ -97,10 +99,14 @@ export function translateToUrl(query: DdfStructuredQuery, options: TranslatorOpt
   const params: [string, string][] = [];
 
   const filterParam = buildFilterParam(query.filters);
-  if (filterParam) params.push(['$filter', filterParam]);
+  if (filterParam) {
+    params.push(['$filter', filterParam]);
+  }
 
   const orderByParam = buildOrderByParam(query.orderBy);
-  if (orderByParam) params.push(['$orderby', orderByParam]);
+  if (orderByParam) {
+    params.push(['$orderby', orderByParam]);
+  }
 
   const paginationParams = buildPaginationParams(query.pagination);
   for (const [key, value] of Object.entries(paginationParams)) {
@@ -111,6 +117,11 @@ export function translateToUrl(query: DdfStructuredQuery, options: TranslatorOpt
     return options.baseUrl;
   }
 
+  // Only the VALUE is percent-encoded (spaces, quotes, etc.). The KEY is left
+  // literal on purpose: OData reserves "$filter", "$top", etc. and some
+  // gateways match query option names before URL-decoding them, so an
+  // encoded key ("%24filter") is silently ignored or 404s even though the
+  // $ character is perfectly legal, unencoded, in a URI query component.
   const queryString = params
     .map(([key, value]) => `${key}=${encodeURIComponent(value)}`)
     .join('&');

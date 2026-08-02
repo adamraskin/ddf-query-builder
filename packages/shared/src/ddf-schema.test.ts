@@ -54,4 +54,30 @@ describe('DdfStructuredQuerySchema', () => {
     const result = DdfStructuredQuerySchema.safeParse({});
     expect(result.success).toBe(true);
   });
+
+  it('normalizes null pagination fields to undefined (regression: model was forced to invent top/skip under strict schemas)', () => {
+    const result = DdfStructuredQuerySchema.safeParse({
+      filters: [],
+      pagination: { top: null, skip: null, count: null },
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.pagination.top).toBeUndefined();
+      expect(result.data.pagination.skip).toBeUndefined();
+      expect(result.data.pagination.count).toBeUndefined();
+    }
+  });
+
+  it('still accepts real pagination values when the model does provide them', () => {
+    const result = DdfStructuredQuerySchema.safeParse({
+      filters: [],
+      pagination: { top: 5, skip: null, count: true },
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.pagination.top).toBe(5);
+      expect(result.data.pagination.skip).toBeUndefined();
+      expect(result.data.pagination.count).toBe(true);
+    }
+  });
 });
