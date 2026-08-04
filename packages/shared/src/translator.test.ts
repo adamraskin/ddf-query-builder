@@ -19,7 +19,7 @@ describe('translator defaults', () => {
   it('produces a valid URL with no filters and default pagination', () => {
     const url = translateToUrl(emptyQuery(), { baseUrl: BASE_URL });
     expect(url).toContain(BASE_URL);
-    expect(url).toContain('$top=25');
+    expect(url).toContain('$top=20');
   });
 
   it('keeps reserved OData keys literal, never percent-encoded', () => {
@@ -66,9 +66,17 @@ describe('value formatting', () => {
     expect(clause).toBe('ListPrice ge 400000');
   });
 
-  it('formats boolean values as lowercase literals', () => {
+  it('maps boolean filters to DDF array-field predicates', () => {
     const clause = buildFilterClause({ field: 'Pool', operator: 'eq', value: true } as any);
-    expect(clause).toBe('PoolYN eq true');
+    expect(clause).toBe('PoolFeatures/any()');
+  });
+
+  it('supports additional documented property fields', () => {
+    const lotSizeClause = buildFilterClause({ field: 'LotSizeArea', operator: 'gte', value: 1000 } as any);
+    const cityRegionClause = buildFilterClause({ field: 'CityRegion', operator: 'contains', value: 'Park' } as any);
+
+    expect(lotSizeClause).toBe('LotSizeArea ge 1000');
+    expect(cityRegionClause).toBe("contains(CityRegion, 'Park')");
   });
 
   it('builds a contains() call for text search', () => {
@@ -91,7 +99,7 @@ describe('combining multiple filters', () => {
     );
     const decoded = decodeURIComponent(url);
     expect(decoded).toContain(
-      "$filter=City eq 'Gatineau' and BedroomsTotal ge 3 and PoolYN eq true",
+      "$filter=City eq 'Gatineau' and BedroomsTotal ge 3 and PoolFeatures/any()",
     );
   });
 });

@@ -6,7 +6,12 @@ import { runGeneratedUrl } from '@/lib/api-client';
 export function UrlPanel({ url }: { url: string }) {
   const [copied, setCopied] = useState(false);
   const [running, setRunning] = useState(false);
-  const [runStatus, setRunStatus] = useState<{ type: 'idle' | 'success' | 'error'; message: string } | null>(null);
+  const [runStatus, setRunStatus] = useState<{
+    type: 'idle' | 'success' | 'error';
+    message: string;
+    details?: string;
+    contentType?: string | null;
+  } | null>(null);
 
   async function handleCopy() {
     try {
@@ -28,11 +33,19 @@ export function UrlPanel({ url }: { url: string }) {
       setRunStatus({
         type: 'success',
         message: `Request completed with status ${response.data.status}.`,
+        details: response.data.body || '(empty response body)',
+        contentType: response.data.contentType,
       });
     } else {
+      const details =
+        typeof response.error.details === 'string'
+          ? response.error.details
+          : JSON.stringify(response.error.details, null, 2);
+
       setRunStatus({
         type: 'error',
         message: response.error.message,
+        details,
       });
     }
 
@@ -62,9 +75,21 @@ export function UrlPanel({ url }: { url: string }) {
           {running ? 'Running…' : 'Run URL'}
         </button>
         {runStatus && (
-          <p className={`text-sm ${runStatus.type === 'error' ? 'text-rust-500' : 'text-paper-dim'}`}>
-            {runStatus.message}
-          </p>
+          <div className="space-y-2">
+            <p className={`text-sm ${runStatus.type === 'error' ? 'text-rust-500' : 'text-paper-dim'}`}>
+              {runStatus.message}
+            </p>
+            {runStatus.contentType && (
+              <p className="text-xs font-mono uppercase tracking-wide text-ink-400">
+                {runStatus.contentType}
+              </p>
+            )}
+            {runStatus.details !== undefined && (
+              <pre className="max-h-80 overflow-auto rounded-sm border border-ink-600/30 bg-ink-950/80 p-3 text-xs font-mono whitespace-pre-wrap break-all text-paper-dim">
+                {runStatus.details}
+              </pre>
+            )}
+          </div>
         )}
       </div>
     </div>

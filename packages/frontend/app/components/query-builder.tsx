@@ -94,12 +94,12 @@ export function QueryBuilder() {
                 Couldn&apos;t build a query from that.
               </p>
               <p className="text-sm text-ink-400">{result.error.message}</p>
-              {Array.isArray(result.error.details) && result.error.details.length > 0 && (
-                <ul className="mt-2 text-xs font-mono text-ink-400 space-y-1">
-                  {result.error.details.map((d, i) => (
-                    <li key={i}>{String(d)}</li>
-                  ))}
-                </ul>
+              {result.error.details !== undefined && (
+                <pre className="mt-3 max-h-80 overflow-auto rounded-sm border border-rust-500/20 bg-ink-950/80 p-3 text-xs font-mono whitespace-pre-wrap break-all text-paper-dim">
+                  {typeof result.error.details === 'string'
+                    ? result.error.details
+                    : JSON.stringify(result.error.details, null, 2)}
+                </pre>
               )}
             </div>
           )}

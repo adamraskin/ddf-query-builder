@@ -2,8 +2,6 @@ import { DdfFilter, DdfOrderBy, DdfPagination, DdfStructuredQuery } from './ddf-
 import { getFieldMetadata } from './ddf-metadata';
 
 /**
- * Milestone 3 — Translator.
- *
  * Converts a validated DdfStructuredQuery into a real DDF OData URL.
  * This module has zero AI/LLM dependency: any valid JSON contract
  * produces a valid DDF URL, deterministically.
@@ -14,7 +12,7 @@ export interface TranslatorOptions {
   baseUrl: string;
 }
 
-const DEFAULT_TOP = 25;
+const DEFAULT_TOP = 20;
 
 /** Maps our internal operator vocabulary to OData filter syntax. */
 function operatorToOData(operator: DdfFilter['operator']): string {
@@ -60,7 +58,19 @@ export function buildFilterClause(filter: DdfFilter): string {
   if (filter.operator === 'contains') {
     return `contains(${fieldName}, ${formatValue(filter.value)})`;
   }
-
+  if (meta.booleanStrategy && typeof filter.value === 'boolean') {
+    switch (meta.booleanStrategy) {
+      case 'arrayNonEmpty':
+        // OData v4 collection lambda: /any() with no predicate checks the
+        // collection is non-empty. The real field (e.g. PoolFeatures) is
+        // an array, not a boolean — there is no "PoolYN"-style flag.
+        return filter.value ? `${fieldName}/any()` : `not ${fieldName}/any()`;
+      case 'numericPositive':
+        // Proxy a boolean concept (e.g. "has a garage") via a real numeric
+        // field (e.g. ParkingTotal) DDF actually exposes.
+        return filter.value ? `${fieldName} gt 0` : `${fieldName} eq 0`;
+    }
+  }
   return `${fieldName} ${operatorToOData(filter.operator)} ${formatValue(filter.value)}`;
 }
 
