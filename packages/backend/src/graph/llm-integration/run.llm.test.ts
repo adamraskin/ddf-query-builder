@@ -3,6 +3,7 @@ import { buildQueryGraph } from '../build-graph';
 import { config } from '../../config';
 import { matchQuery } from './match';
 import { LLM_TEST_CASES } from './cases';
+import { isDdfConfigured, sleep, fetchDdfStatus } from './ddf-fetch';
 
 /**
  * True end-to-end reliability check for the extraction step: real LM
@@ -35,12 +36,19 @@ async function isLmStudioReachable(): Promise<boolean> {
 }
 
 const reachable = await isLmStudioReachable();
+const ddfConfigured = isDdfConfigured();
 
 if (!reachable) {
   // eslint-disable-next-line no-console
   console.warn(
     `\n[llm-integration] Skipping: LM Studio not reachable at ${config.lmStudio.baseUrl}. ` +
       `Start the local server (LM Studio -> Developer -> Start Server) and re-run "npm run test:llm".\n`,
+  );
+} else if (!ddfConfigured) {
+  // eslint-disable-next-line no-console
+  console.warn(
+    '\n[llm-integration] DDF OAuth not configured — generated URLs will be schema-checked only, ' +
+      'not fetched against the real DDF API. Set DDF_CLIENT_ID/DDF_CLIENT_SECRET/DDF_TOKEN_URL to enable that check.\n',
   );
 }
 
@@ -81,11 +89,21 @@ describe.skipIf(!reachable)(`LLM extraction reliability (model: ${config.lmStudi
           }
 
           const { ok, problems } = matchQuery(result.structuredQuery, testCase.expectation);
-          if (ok) {
-            passes++;
-          } else {
+          if (!ok) {
             problemsByRun.push(problems);
+            continue;
           }
+
+          if (ddfConfigured && result.url) {
+            await sleep(1000);
+            const ddfResult = await fetchDdfStatus(result.url);
+            if (!ddfResult.ok) {
+              problemsByRun.push([`DDF returned ${ddfResult.status} for generated URL: ${result.url}`]);
+              continue;
+            }
+          }
+
+          passes++;
         }
 
         const passRate = passes / RUNS;

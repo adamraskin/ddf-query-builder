@@ -21,6 +21,13 @@ export interface DdfFieldMetadata {
   dataType: DdfDataType;
   /** Which operators are valid for this field. Must be a subset of DDF_OPERATORS. */
   operators: readonly DdfOperator[];
+  /**
+   * Defaults to true. Some real DDF fields exist and are readable, but DDF
+   * rejects them outright in $filter (confirmed live, not just guessed) —
+   * distinct from "no operator works", since the field itself is still a
+   * legitimate concept to describe to the LLM, just not a filterable one.
+   */
+  filterable?: boolean;
   description: string;
   /** A couple of example values, used both in prompts and in tests. */
   examples: (string | number | boolean)[];
@@ -296,13 +303,15 @@ export const DDF_FIELDS: readonly DdfFieldMetadata[] = [
     displayName: 'Listing Status',
     ddfField: 'StandardStatus',
     dataType: 'string',
-    operators: OPS.equalityOnly,
-    // Confirmed against the real EDMX enum schema: DDF only ever exposes
-    // "Active" through this feed (no Pending/Closed/etc.) — my earlier
-    // guess based on RESO's general standard lookup was wrong. This makes
-    // the field close to a no-op for filtering (almost everything already
-    // matches), but it's kept for correctness/explicitness.
-    description: 'The current status of the listing. DDF only publishes Active listings through this feed.',
+    // Confirmed live against the real DDF API (not just the EDMX schema):
+    // DDF rejects StandardStatus in $filter outright — "The property
+    // 'StandardStatus' cannot be used in the $filter query option." (400).
+    // Not just an unsupported operator, the field can't be filtered on at
+    // all, so it gets no operators and is marked non-filterable.
+    operators: [],
+    filterable: false,
+    description:
+      'The current status of the listing. DDF only publishes Active listings through this feed, and does not allow filtering on this field.',
     examples: ['Active'],
     allowedValues: ['Active'],
   },
@@ -349,6 +358,7 @@ export function getFieldMetadata(key: string): DdfFieldMetadata | undefined {
 export function isOperatorValidForField(fieldKey: string, operator: string): boolean {
   const field = getFieldMetadata(fieldKey);
   if (!field) return false;
+  if (field.filterable === false) return false;
   return (field.operators as readonly string[]).includes(operator);
 }
 

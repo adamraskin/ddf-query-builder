@@ -8,6 +8,9 @@ import { DDF_FIELDS, DDF_OPERATORS, DdfFieldMetadata } from './ddf-metadata';
  */
 
 function describeField(field: DdfFieldMetadata): string {
+  if (field.filterable === false) {
+    return `- "${field.key}" (${field.dataType}): ${field.description} NOT FILTERABLE — never add a filter on this field, no matter what the user asks.`;
+  }
   const ops = field.operators.join(', ');
   const examples = field.examples.map((e) => JSON.stringify(e)).join(', ');
   const allowed = field.allowedValues ? ` Allowed values: ${field.allowedValues.join(', ')}.` : '';

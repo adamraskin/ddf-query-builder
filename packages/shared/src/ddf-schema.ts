@@ -18,11 +18,11 @@ export const DdfFilterSchema = DdfFilterShape.superRefine((filter, ctx) => {
   }
 
   if (!isOperatorValidForField(filter.field, filter.operator)) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: `Operator "${filter.operator}" is not valid for field "${filter.field}". Allowed: ${meta.operators.join(', ')}`,
-      path: ['operator'],
-    });
+    const message =
+      meta.filterable === false
+        ? `Field "${filter.field}" does not support filtering (DDF rejects it in $filter).`
+        : `Operator "${filter.operator}" is not valid for field "${filter.field}". Allowed: ${meta.operators.join(', ')}`;
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message, path: ['operator'] });
   }
 
   const actualType = typeof filter.value;
