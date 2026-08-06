@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { config } from '../config';
 import { buildQueryGraph } from '../graph/build-graph';
+import { getDdfAccessToken, DdfConfigError, DdfTokenError } from '../ddf/ddf-token';
 
 /**
  * Milestone 6 — expose the graph through Express.
@@ -74,39 +75,25 @@ router.post('/run-url', async (req: Request, res: Response) => {
     });
   }
 
-  try {
-    const tokenResponse = await fetch(config.ddf.tokenUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        grant_type: config.ddf.grantType,
-        client_id: config.ddf.clientId,
-        client_secret: config.ddf.clientSecret,
-        scope: config.ddf.tokenScope,
-      }),
+  // Only ever fetch DDF's own configured API with our token attached —
+  // never an arbitrary caller-supplied destination. Without this check,
+  // /run-url is effectively an open proxy: anyone who can POST here could
+  // make this server fetch any URL while attaching a live DDF bearer
+  // token in the Authorization header.
+  const requestedOrigin = new URL(parsedBody.data.url).origin;
+  const allowedOrigin = new URL(config.ddfBaseUrl).origin;
+  if (requestedOrigin !== allowedOrigin) {
+    return res.status(400).json({
+      ok: false,
+      error: {
+        code: 'INVALID_REQUEST',
+        message: `url must point at the configured DDF API (${allowedOrigin}), got ${requestedOrigin}.`,
+      },
     });
+  }
 
-    if (!tokenResponse.ok) {
-      const errorBody = await tokenResponse.text();
-      return res.status(502).json({
-        ok: false,
-        error: {
-          code: 'TOKEN_REQUEST_FAILED',
-          message: 'Could not obtain a DDF access token.',
-          details: errorBody,
-        },
-      });
-    }
-
-    const tokenData = (await tokenResponse.json()) as { access_token?: string };
-    const accessToken = tokenData.access_token;
-
-    if (!accessToken) {
-      return res.status(502).json({
-        ok: false,
-        error: { code: 'TOKEN_REQUEST_FAILED', message: 'DDF access token was not returned.' },
-      });
-    }
+  try {
+    const accessToken = await getDdfAccessToken();
 
     const response = await fetch(parsedBody.data.url, {
       headers: { Authorization: `Bearer ${accessToken}` },
@@ -122,6 +109,18 @@ router.post('/run-url', async (req: Request, res: Response) => {
       },
     });
   } catch (err) {
+    if (err instanceof DdfConfigError) {
+      return res.status(503).json({
+        ok: false,
+        error: { code: 'DDF_NOT_CONFIGURED', message: err.message },
+      });
+    }
+    if (err instanceof DdfTokenError) {
+      return res.status(502).json({
+        ok: false,
+        error: { code: 'TOKEN_REQUEST_FAILED', message: err.message, details: err.details },
+      });
+    }
     const message = err instanceof Error ? err.message : String(err);
     return res.status(500).json({
       ok: false,

@@ -33,19 +33,29 @@ export interface DdfFieldMetadata {
    */
   integerOnly?: boolean;
   /**
-   * Some concepts we expose as a simple boolean (Pool, Waterfront, Garage)
-   * don't correspond to an actual boolean field in the real DDF model —
-   * confirmed against the real Property model schema. The LLM still only
-   * ever sees/produces true/false for these; this tells the translator how
-   * to turn that into a real OData clause against the field DDF actually
-   * exposes:
-   *  - 'arrayNonEmpty': the real field is an array (e.g. PoolFeatures).
-   *    true -> "<field>/any()", false -> "not <field>/any()".
-   *  - 'numericPositive': proxy via a real numeric field (e.g. ParkingTotal
-   *    standing in for "has a garage", since DDF has no garage-specific
-   *    flag or enum we've confirmed). true -> "<field> gt 0", false -> "<field> eq 0".
+   * dataType 'boolean' concepts (Pool, Waterfront, Garage) backed by a real
+   * array/enum field, using a curated whitelist of confirmed real enum
+   * values (from the actual EDMX schema — not a guess). true -> the array
+   * contains ANY of these values; false -> none of them.
+   *   e.g. Garage -> ParkingFeatures, checked against
+   *   ['Garage','Attached Garage',...] specifically (ParkingFeatures also
+   *   contains many non-garage values like 'Street'/'RV'/'Boat House', so
+   *   "any element present" would be wrong — this checks for the
+   *   garage-specific values only).
+   *
+   * ⚠️ Translates to OData v4 collection-lambda syntax ("/any(...)"),
+   * which is UNVERIFIED against DDF specifically — see translator.ts.
    */
-  booleanStrategy?: 'arrayNonEmpty' | 'numericPositive';
+  arrayOneOf?: readonly string[];
+  /**
+   * True when the real DDF field is itself a collection (e.g.
+   * ArchitecturalStyle is "Array of Strings"). eq/contains need OData
+   * collection-lambda syntax ("Field/any(f: f eq 'X')") instead of a
+   * direct comparison, which isn't valid against a collection.
+   *
+   * ⚠️ Same "/any()" caveat as arrayOneOf above — unverified against DDF.
+   */
+  arrayField?: boolean;
 }
 
 const OPS = {
@@ -68,28 +78,43 @@ export const DDF_FIELDS: readonly DdfFieldMetadata[] = [
   {
     key: 'PropertyType',
     displayName: 'Property Type',
-    // Real field is PropertySubType (Enum: PropertySubType), e.g. "Condo".
-    // The public docs show this as a pick-list field, so we constrain the
-    // model to a practical set of common property sub-types rather than
-    // allowing arbitrary invented values.
+    // Real field is PropertySubType. Confirmed against the real EDMX enum
+    // schema — these are the actual 13 values, not a guess.
     ddfField: 'PropertySubType',
     dataType: 'string',
     operators: OPS.equalityOnly,
-    description:
-      'The property sub-type, such as Residential, Condo, Duplex, Commercial, or Land.',
-    examples: ['Condo', 'Duplex', 'Residential'],
+    description: 'The property sub-type.',
+    examples: ['Single Family', 'Multi-family'],
     allowedValues: [
-      'Residential',
-      'Condo',
-      'Duplex',
-      'Townhouse',
-      'Commercial',
-      'Land',
-      'Business',
-      'Manufactured',
-      'Modular',
+      'Single Family',
+      'Multi-family',
+      'Recreational',
       'Agriculture',
+      'Vacant Land',
+      'Office',
+      'Retail',
+      'Business',
+      'Industrial',
+      'Parking',
+      'Institutional - Special Purpose',
+      'Other',
+      'Hospitality',
     ],
+  },
+  {
+    key: 'CommonInterest',
+    displayName: 'Ownership Structure',
+    // Condo is an OWNERSHIP structure, not a physical property type — this
+    // is the real field for it, separate from PropertyType/PropertySubType.
+    // "Condo" was previously (incorrectly) attempted against PropertyType,
+    // where it doesn't exist; "Condo/Strata" is the real CommonInterest value.
+    ddfField: 'CommonInterest',
+    dataType: 'string',
+    operators: OPS.equalityOnly,
+    description:
+      "The property's ownership structure — e.g. condo/strata vs. freehold. Use this (not PropertyType) for \"condo\" requests.",
+    examples: ['Condo/Strata', 'Freehold'],
+    allowedValues: ['Freehold', 'Condo/Strata', 'Timeshare/Fractional', 'Leasehold'],
   },
   {
     key: 'BedroomsTotal',
@@ -132,74 +157,6 @@ export const DDF_FIELDS: readonly DdfFieldMetadata[] = [
     examples: [350000, 500000, 750000],
   },
   {
-    key: 'Pool',
-    displayName: 'Has Pool',
-    // Real field is PoolFeatures (array of enum strings) — there is no
-    // PoolYN boolean in the actual DDF model. "true" is translated to
-    // "PoolFeatures/any()" (the array is non-empty).
-    ddfField: 'PoolFeatures',
-    dataType: 'boolean',
-    operators: OPS.boolean,
-    booleanStrategy: 'arrayNonEmpty',
-    description: 'Whether the property has any recorded pool feature.',
-    examples: [true, false],
-  },
-  {
-    key: 'LotSizeArea',
-    displayName: 'Lot Size Area',
-    ddfField: 'LotSizeArea',
-    dataType: 'number',
-    operators: OPS.numeric,
-    description: 'The total area of the lot.',
-    examples: [500, 1000, 2500],
-  },
-  {
-    key: 'LotSizeUnits',
-    displayName: 'Lot Size Units',
-    ddfField: 'LotSizeUnits',
-    dataType: 'string',
-    operators: OPS.equalityOnly,
-    description: 'The unit used for the lot size measurement.',
-    examples: ['Acres', 'Square Feet'],
-  },
-  {
-    key: 'CityRegion',
-    displayName: 'City Region',
-    ddfField: 'CityRegion',
-    dataType: 'string',
-    operators: OPS.text,
-    description: 'A sub-section or area of a city.',
-    examples: ['Parkdale', 'Downtown', 'West End'],
-  },
-  {
-    key: 'Waterfront',
-    displayName: 'Waterfront',
-    // Real field is WaterfrontFeatures (array of enum strings) — there is
-    // no WaterfrontYN boolean in the actual DDF model.
-    ddfField: 'WaterfrontFeatures',
-    dataType: 'boolean',
-    operators: OPS.boolean,
-    booleanStrategy: 'arrayNonEmpty',
-    description: 'Whether the property has any recorded waterfront feature.',
-    examples: [true, false],
-  },
-  {
-    key: 'Garage',
-    displayName: 'Has Garage',
-    // DDF has no garage-specific flag or confirmed enum value — this is a
-    // best-effort proxy via ParkingTotal (any recorded parking, not
-    // necessarily an enclosed garage). Revisit once we can confirm the
-    // real ParkingFeatures enum values (would allow an exact
-    // ParkingFeatures/any(f: f eq 'Garage') check instead).
-    ddfField: 'ParkingTotal',
-    dataType: 'boolean',
-    operators: OPS.boolean,
-    booleanStrategy: 'numericPositive',
-    description:
-      'Whether the property has at least one recorded parking space. Best-effort proxy for "has a garage" — DDF does not expose a dedicated garage flag.',
-    examples: [true, false],
-  },
-  {
     key: 'ParkingSpaces',
     displayName: 'Parking Spaces',
     ddfField: 'ParkingTotal',
@@ -208,6 +165,112 @@ export const DDF_FIELDS: readonly DdfFieldMetadata[] = [
     integerOnly: true,
     description: 'Total number of parking spaces included in the sale.',
     examples: [1, 2, 4],
+  },
+  {
+    key: 'Fireplace',
+    displayName: 'Has Fireplace',
+    // Real, direct boolean field — doesn't need the arrayOneOf treatment
+    // Pool/Waterfront/Garage below need, since FireplaceYN is a real
+    // scalar boolean, not an array.
+    ddfField: 'FireplaceYN',
+    dataType: 'boolean',
+    operators: OPS.boolean,
+    description: 'Whether the property includes a fireplace.',
+    examples: [true, false],
+  },
+  {
+    key: 'Pool',
+    displayName: 'Has Pool',
+    // Real field is PoolFeatures (array of enum strings). Checked against
+    // a curated whitelist of confirmed real PoolFeatures values that
+    // clearly indicate an actual pool exists. Excludes ambiguous entries
+    // ("Pool equipment" alone, "Unknown").
+    ddfField: 'PoolFeatures',
+    dataType: 'boolean',
+    operators: OPS.boolean,
+    arrayOneOf: [
+      'Pool',
+      'Inground pool',
+      'Above ground pool',
+      'On Ground Pool',
+      'Outdoor pool',
+      'Indoor pool',
+      'Heated pool',
+      'Salt Water Pool',
+      'Lap Pool',
+      'Kidney Shaped',
+      'Slide',
+      'Diving Board',
+    ],
+    description: 'Whether the property has a pool (checked against real PoolFeatures values).',
+    examples: [true, false],
+  },
+  {
+    key: 'Waterfront',
+    displayName: 'Waterfront',
+    // Real field is WaterfrontFeatures (array of enum strings). Excludes
+    // "Waterfront nearby" (implies NOT actually on the water),
+    // "Indirect Waterfront", and "Waterfront Community" (describes the
+    // community, not necessarily this specific lot) — these read as
+    // meaningfully weaker/different claims than "is waterfront".
+    ddfField: 'WaterfrontFeatures',
+    dataType: 'boolean',
+    operators: OPS.boolean,
+    arrayOneOf: [
+      'Waterfront',
+      'Waterfront on lake',
+      'Waterfront on ocean',
+      'Waterfront on river',
+      'Waterfront on pond',
+      'Waterfront on stream',
+      'Waterfront on creek',
+      'Waterfront on canal',
+      'Deeded water access',
+      'Restricted waterfront',
+      'Waterfront, Road Between',
+      'Island',
+      'Direct Waterfront',
+    ],
+    description: 'Whether the property is on a waterfront (checked against real WaterfrontFeatures values).',
+    examples: [true, false],
+  },
+  {
+    key: 'Garage',
+    displayName: 'Has Garage',
+    // Real field is ParkingFeatures — a large array that also includes
+    // many NON-garage values (Street, RV, Boat House, Visitor Parking,
+    // etc.), so "array is non-empty" would be wrong. Checked against a
+    // whitelist of specifically garage-related real values instead.
+    ddfField: 'ParkingFeatures',
+    dataType: 'boolean',
+    operators: OPS.boolean,
+    arrayOneOf: ['Garage', 'Attached Garage', 'Integrated Garage', 'Detached Garage', 'Heated Garage', 'Underground', 'Indoor', 'Parkade'],
+    description: 'Whether the property has a garage (checked against real ParkingFeatures values, not just any parking).',
+    examples: [true, false],
+  },
+  {
+    key: 'ArchitecturalStyle',
+    displayName: 'Architectural Style',
+    // Real array field. This is the correct home for style descriptors
+    // like "cottage" or "bungalow" — confirmed real values, e.g. "Cottage"
+    // is a real ArchitecturalStyle value (this is the actual fix for the
+    // earlier bug where the model invented PropertyType="Cottage").
+    ddfField: 'ArchitecturalStyle',
+    dataType: 'string',
+    operators: OPS.equalityOnly,
+    arrayField: true,
+    description: 'The architectural style of the structure.',
+    examples: ['Cottage', 'Bungalow', 'Ranch'],
+    allowedValues: [
+      'Hillside Bungalow', 'Split entry bungalow', 'A-Frame', 'Bungalow', 'Contemporary',
+      'Cape Cod', 'Carriage', 'Chalet', 'Character', 'Church', 'Cottage', 'Cabin', 'Camp',
+      'Custom', 'Log house/cabin', 'Luxury Villa', 'Mini', 'Neighbourhood', 'Penthouse',
+      'Raised bungalow', 'Raised ranch', 'Ranch', 'Tudor', 'Westcoast', 'Cathedral entry',
+      'Multi-level', 'Basement entry', 'Ground level entry', 'Bi-level', 'Split level entry',
+      '2 Level', '3 Level', '4 Level', '5 Level', 'Other', 'None', 'Unknown', 'Tower',
+      'High rise', 'Low rise', 'Multi-Unit', 'Cab-Over', 'Mobile Home', 'Loft', 'Cross Dock',
+      'Lower Level', 'Off 2nd Floor', 'Raised Ranch w/ Bonus Room', 'Top Floor',
+    ],
   },
   {
     key: 'YearBuilt',
@@ -234,23 +297,14 @@ export const DDF_FIELDS: readonly DdfFieldMetadata[] = [
     ddfField: 'StandardStatus',
     dataType: 'string',
     operators: OPS.equalityOnly,
-    // Based on the RESO Data Dictionary's standard StandardStatus lookup
-    // (one of RESO's more consistently standardized fields) — not yet
-    // confirmed against DDF's actual deployed enum values.
-    description: 'The current status of the listing (e.g. Active, Pending, Closed).',
-    examples: ['Active', 'Pending', 'Closed'],
-    allowedValues: [
-      'Active',
-      'ActiveUnderContract',
-      'Canceled',
-      'Closed',
-      'ComingSoon',
-      'Expired',
-      'Hold',
-      'Incomplete',
-      'Pending',
-      'Withdrawn',
-    ],
+    // Confirmed against the real EDMX enum schema: DDF only ever exposes
+    // "Active" through this feed (no Pending/Closed/etc.) — my earlier
+    // guess based on RESO's general standard lookup was wrong. This makes
+    // the field close to a no-op for filtering (almost everything already
+    // matches), but it's kept for correctness/explicitness.
+    description: 'The current status of the listing. DDF only publishes Active listings through this feed.',
+    examples: ['Active'],
+    allowedValues: ['Active'],
   },
   {
     key: 'PostalCode',

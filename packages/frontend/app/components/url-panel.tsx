@@ -3,15 +3,25 @@
 import { useState } from 'react';
 import { runGeneratedUrl } from '@/lib/api-client';
 
+type RunResult =
+  | { type: 'success'; status: number; contentType: string | null; body: string }
+  | { type: 'error'; message: string };
+
+function formatBody(body: string, contentType: string | null): string {
+  if (contentType?.includes('json')) {
+    try {
+      return JSON.stringify(JSON.parse(body), null, 2);
+    } catch {
+      // Not actually valid JSON despite the content-type — fall through to raw text.
+    }
+  }
+  return body;
+}
+
 export function UrlPanel({ url }: { url: string }) {
   const [copied, setCopied] = useState(false);
   const [running, setRunning] = useState(false);
-  const [runStatus, setRunStatus] = useState<{
-    type: 'idle' | 'success' | 'error';
-    message: string;
-    details?: string;
-    contentType?: string | null;
-  } | null>(null);
+  const [runResult, setRunResult] = useState<RunResult | null>(null);
 
   async function handleCopy() {
     try {
@@ -25,28 +35,19 @@ export function UrlPanel({ url }: { url: string }) {
 
   async function handleRunUrl() {
     setRunning(true);
-    setRunStatus(null);
+    setRunResult(null);
 
     const response = await runGeneratedUrl(url);
 
     if (response.ok) {
-      setRunStatus({
+      setRunResult({
         type: 'success',
-        message: `Request completed with status ${response.data.status}.`,
-        details: response.data.body || '(empty response body)',
+        status: response.data.status,
         contentType: response.data.contentType,
+        body: response.data.body,
       });
     } else {
-      const details =
-        typeof response.error.details === 'string'
-          ? response.error.details
-          : JSON.stringify(response.error.details, null, 2);
-
-      setRunStatus({
-        type: 'error',
-        message: response.error.message,
-        details,
-      });
+      setRunResult({ type: 'error', message: response.error.message });
     }
 
     setRunning(false);
@@ -74,21 +75,24 @@ export function UrlPanel({ url }: { url: string }) {
         >
           {running ? 'Running…' : 'Run URL'}
         </button>
-        {runStatus && (
-          <div className="space-y-2">
-            <p className={`text-sm ${runStatus.type === 'error' ? 'text-rust-500' : 'text-paper-dim'}`}>
-              {runStatus.message}
+
+        {runResult?.type === 'error' && (
+          <p className="text-sm text-rust-500">{runResult.message}</p>
+        )}
+
+        {runResult?.type === 'success' && (
+          <div className="flex flex-col gap-1">
+            <p
+              className={`text-xs font-mono uppercase tracking-wide ${
+                runResult.status >= 200 && runResult.status < 300 ? 'text-sage-500' : 'text-rust-500'
+              }`}
+            >
+              Status {runResult.status}
+              {runResult.contentType ? ` · ${runResult.contentType}` : ''}
             </p>
-            {runStatus.contentType && (
-              <p className="text-xs font-mono uppercase tracking-wide text-ink-400">
-                {runStatus.contentType}
-              </p>
-            )}
-            {runStatus.details !== undefined && (
-              <pre className="max-h-80 overflow-auto rounded-sm border border-ink-600/30 bg-ink-950/80 p-3 text-xs font-mono whitespace-pre-wrap break-all text-paper-dim">
-                {runStatus.details}
-              </pre>
-            )}
+            <pre className="max-h-96 overflow-auto bg-ink-950/60 border border-ink-600/40 rounded-sm px-4 py-3 text-xs font-mono whitespace-pre-wrap break-all text-paper-dim">
+              {formatBody(runResult.body, runResult.contentType) || '(empty response body)'}
+            </pre>
           </div>
         )}
       </div>

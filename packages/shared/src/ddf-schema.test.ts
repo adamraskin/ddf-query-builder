@@ -41,17 +41,91 @@ describe('DdfStructuredQuerySchema', () => {
     expect(result.success).toBe(false);
   });
 
-  it('rejects a string value outside the allowed enum for PropertyType', () => {
+  it('rejects a string value outside the allowed enum for StandardStatus', () => {
+    const result = DdfFilterSchema.safeParse({
+      field: 'StandardStatus',
+      operator: 'eq',
+      value: 'Teleporting',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('accepts a real PropertySubType value (confirmed against the actual EDMX enum)', () => {
     const result = DdfFilterSchema.safeParse({
       field: 'PropertyType',
       operator: 'eq',
-      value: 'Spaceship',
+      value: 'Single Family',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('regression: rejects "Cottage" as a PropertyType value (real fix: Cottage is an ArchitecturalStyle, not a PropertySubType)', () => {
+    const result = DdfFilterSchema.safeParse({
+      field: 'PropertyType',
+      operator: 'eq',
+      value: 'Cottage',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('regression: rejects "Condo" as a PropertyType value (real fix: condo is a CommonInterest/ownership concept, not a PropertySubType)', () => {
+    const result = DdfFilterSchema.safeParse({
+      field: 'PropertyType',
+      operator: 'eq',
+      value: 'Condo',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('accepts "Condo/Strata" as a CommonInterest value (the real, correct home for "condo")', () => {
+    const result = DdfFilterSchema.safeParse({
+      field: 'CommonInterest',
+      operator: 'eq',
+      value: 'Condo/Strata',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts "Cottage" as an ArchitecturalStyle value (the real, correct home for this concept)', () => {
+    const result = DdfFilterSchema.safeParse({
+      field: 'ArchitecturalStyle',
+      operator: 'eq',
+      value: 'Cottage',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects a fractional value for an integer-only field (regression: model sent BathroomsTotal=2.5)', () => {
+    const result = DdfFilterSchema.safeParse({
+      field: 'BathroomsTotal',
+      operator: 'gte',
+      value: 2.5,
     });
     expect(result.success).toBe(false);
   });
 
   it('accepts an empty query (no filters)', () => {
     const result = DdfStructuredQuerySchema.safeParse({});
+    expect(result.success).toBe(true);
+  });
+
+  it('regression: rejects a faked "or" — same field with two conflicting eq values ANDed together', () => {
+    const result = DdfStructuredQuerySchema.safeParse({
+      filters: [
+        { field: 'City', operator: 'eq', value: 'Ottawa' },
+        { field: 'City', operator: 'eq', value: 'Gatineau' },
+      ],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('does not flag the same field appearing twice with different operators (e.g. a price range)', () => {
+    const result = DdfStructuredQuerySchema.safeParse({
+      filters: [
+        { field: 'ListPrice', operator: 'gte', value: 400000 },
+        { field: 'ListPrice', operator: 'lte', value: 600000 },
+      ],
+    });
     expect(result.success).toBe(true);
   });
 

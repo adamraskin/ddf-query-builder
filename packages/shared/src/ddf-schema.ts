@@ -40,6 +40,14 @@ export const DdfFilterSchema = DdfFilterShape.superRefine((filter, ctx) => {
     });
   }
 
+  if (typeOk && expected === 'number' && meta.integerOnly && !Number.isInteger(filter.value)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: `Field "${filter.field}" expects an integer value (the real DDF field is integer-only), got ${filter.value}`,
+      path: ['value'],
+    });
+  }
+
   if (meta.allowedValues && expected === 'string') {
     const allowed = meta.allowedValues as readonly string[];
     if (!allowed.includes(filter.value as string)) {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { translateToUrl, buildFilterClause } from './translator';
+import { translateToUrl, buildFilterClause, DEFAULT_TOP } from './translator';
 import { DDF_FIELDS } from './ddf-metadata';
 import { DdfStructuredQuery } from './ddf-schema';
 
@@ -19,7 +19,7 @@ describe('translator defaults', () => {
   it('produces a valid URL with no filters and default pagination', () => {
     const url = translateToUrl(emptyQuery(), { baseUrl: BASE_URL });
     expect(url).toContain(BASE_URL);
-    expect(url).toContain('$top=20');
+    expect(url).toContain(`$top=${DEFAULT_TOP}`);
   });
 
   it('keeps reserved OData keys literal, never percent-encoded', () => {
@@ -66,17 +66,33 @@ describe('value formatting', () => {
     expect(clause).toBe('ListPrice ge 400000');
   });
 
-  it('maps boolean filters to DDF array-field predicates', () => {
-    const clause = buildFilterClause({ field: 'Pool', operator: 'eq', value: true } as any);
-    expect(clause).toBe('PoolFeatures/any()');
+  it('formats boolean values as lowercase literals', () => {
+    const clause = buildFilterClause({ field: 'Fireplace', operator: 'eq', value: true } as any);
+    expect(clause).toBe('FireplaceYN eq true');
   });
 
-  it('supports additional documented property fields', () => {
-    const lotSizeClause = buildFilterClause({ field: 'LotSizeArea', operator: 'gte', value: 1000 } as any);
-    const cityRegionClause = buildFilterClause({ field: 'CityRegion', operator: 'contains', value: 'Park' } as any);
+  it('translates Garage (arrayOneOf) to an OR-of-real-values lambda against ParkingFeatures', () => {
+    const trueClause = buildFilterClause({ field: 'Garage', operator: 'eq', value: true } as any);
+    const falseClause = buildFilterClause({ field: 'Garage', operator: 'eq', value: false } as any);
+    expect(trueClause).toBe(
+      "ParkingFeatures/any(f: f eq 'Garage' or f eq 'Attached Garage' or f eq 'Integrated Garage' or f eq 'Detached Garage' or f eq 'Heated Garage' or f eq 'Underground' or f eq 'Indoor' or f eq 'Parkade')",
+    );
+    expect(falseClause).toMatch(/^not ParkingFeatures\/any\(/);
+  });
 
-    expect(lotSizeClause).toBe('LotSizeArea ge 1000');
-    expect(cityRegionClause).toBe("contains(CityRegion, 'Park')");
+  it('regression: Garage does NOT match on unrelated ParkingFeatures values like Street or RV', () => {
+    // The whitelist is exhaustive and explicit — this just documents that
+    // intent by checking the generated clause never references anything
+    // outside the curated garage-specific list.
+    const clause = buildFilterClause({ field: 'Garage', operator: 'eq', value: true } as any);
+    expect(clause).not.toContain('Street');
+    expect(clause).not.toContain('RV');
+    expect(clause).not.toContain('Boat House');
+  });
+
+  it('translates ArchitecturalStyle (arrayField) using OData collection-lambda syntax', () => {
+    const clause = buildFilterClause({ field: 'ArchitecturalStyle', operator: 'eq', value: 'Cottage' } as any);
+    expect(clause).toBe("ArchitecturalStyle/any(f: f eq 'Cottage')");
   });
 
   it('builds a contains() call for text search', () => {
@@ -92,14 +108,14 @@ describe('combining multiple filters', () => {
         filters: [
           { field: 'City', operator: 'eq', value: 'Gatineau' },
           { field: 'BedroomsTotal', operator: 'gte', value: 3 },
-          { field: 'Pool', operator: 'eq', value: true },
+          { field: 'Fireplace', operator: 'eq', value: true },
         ],
       }),
       { baseUrl: BASE_URL },
     );
     const decoded = decodeURIComponent(url);
     expect(decoded).toContain(
-      "$filter=City eq 'Gatineau' and BedroomsTotal ge 3 and PoolFeatures/any()",
+      "$filter=City eq 'Gatineau' and BedroomsTotal ge 3 and FireplaceYN eq true",
     );
   });
 });
@@ -126,6 +142,51 @@ describe('orderBy', () => {
     );
     const decoded = decodeURIComponent(url);
     expect(decoded).toContain('$orderby=City asc,ListPrice desc');
+  });
+});
+
+describe('regression: minimal escaping — nothing is percent-encoded except what would break the URL', () => {
+  it('leaves spaces, slashes, colons, and commas completely literal', () => {
+    const url = translateToUrl(
+      emptyQuery({
+        filters: [{ field: 'ArchitecturalStyle', operator: 'eq', value: 'Cottage' }],
+        orderBy: [
+          { field: 'City', direction: 'asc' },
+          { field: 'ListPrice', direction: 'desc' },
+        ],
+      }),
+      { baseUrl: BASE_URL },
+    );
+    expect(url).not.toMatch(/%/);
+    expect(url).toContain("ArchitecturalStyle/any(f: f eq 'Cottage')");
+    expect(url).toContain('$orderby=City asc,ListPrice desc');
+  });
+
+  it('still escapes % itself, to avoid ambiguous double-encoding', () => {
+    const url = translateToUrl(
+      emptyQuery({ filters: [{ field: 'City', operator: 'eq', value: '50% Discount District' }] }),
+      { baseUrl: BASE_URL },
+    );
+    expect(url).toContain('50%25 Discount District');
+  });
+
+  it('escapes & so it cannot be read as a new query parameter', () => {
+    const url = translateToUrl(
+      emptyQuery({ filters: [{ field: 'City', operator: 'eq', value: 'Smith & Sons Estates' }] }),
+      { baseUrl: BASE_URL },
+    );
+    expect(url).toContain('Smith %26 Sons Estates');
+    // Splitting on '&' should yield exactly the real params, not an extra fake one.
+    const paramCount = url.split('&').length;
+    expect(paramCount).toBe(2); // $filter and $top only
+  });
+
+  it('escapes # so it cannot be read as a URL fragment', () => {
+    const url = translateToUrl(
+      emptyQuery({ filters: [{ field: 'City', operator: 'eq', value: 'Unit #4' }] }),
+      { baseUrl: BASE_URL },
+    );
+    expect(url).toContain('Unit %234');
   });
 });
 

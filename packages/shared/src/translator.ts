@@ -2,6 +2,8 @@ import { DdfFilter, DdfOrderBy, DdfPagination, DdfStructuredQuery } from './ddf-
 import { getFieldMetadata } from './ddf-metadata';
 
 /**
+ * Milestone 3 — Translator.
+ *
  * Converts a validated DdfStructuredQuery into a real DDF OData URL.
  * This module has zero AI/LLM dependency: any valid JSON contract
  * produces a valid DDF URL, deterministically.
@@ -12,7 +14,7 @@ export interface TranslatorOptions {
   baseUrl: string;
 }
 
-const DEFAULT_TOP = 20;
+export const DEFAULT_TOP = 20;
 
 /** Maps our internal operator vocabulary to OData filter syntax. */
 function operatorToOData(operator: DdfFilter['operator']): string {
@@ -55,22 +57,37 @@ export function buildFilterClause(filter: DdfFilter): string {
   }
   const fieldName = meta.ddfField;
 
+  // ⚠️ UNVERIFIED against DDF specifically. "/any(...)" is standard OData
+  // v4 collection-lambda syntax (used generally across OData APIs to
+  // filter array-typed fields), but that's a spec-conformance assumption,
+  // not something confirmed in DDF's own docs. Given DDF has already
+  // shown gateway behavior that deviates from strict OData/URI spec
+  // elsewhere ($filter needing a literal "$", spaces needing to stay
+  // literal), there's a real chance this either isn't supported at all or
+  // needs different syntax. Test directly against the real endpoint
+  // before relying on Pool/Waterfront/Garage/ArchitecturalStyle filters.
+  //
+  // Boolean concept backed by a real array field, checked against a
+  // curated whitelist of confirmed real enum values (e.g. Garage ->
+  // ParkingFeatures contains one of ['Garage','Attached Garage',...]).
+  if (meta.arrayOneOf && typeof filter.value === 'boolean') {
+    const predicate = meta.arrayOneOf.map((v) => `f eq ${formatValue(v)}`).join(' or ');
+    return filter.value ? `${fieldName}/any(f: ${predicate})` : `not ${fieldName}/any(f: ${predicate})`;
+  }
+
+  // String/enum field where the real DDF field is itself a collection
+  // (e.g. ArchitecturalStyle). Same "/any()" caveat as above applies.
+  if (meta.arrayField) {
+    if (filter.operator === 'contains') {
+      return `${fieldName}/any(f: contains(f, ${formatValue(filter.value)}))`;
+    }
+    return `${fieldName}/any(f: f ${operatorToOData(filter.operator)} ${formatValue(filter.value)})`;
+  }
+
   if (filter.operator === 'contains') {
     return `contains(${fieldName}, ${formatValue(filter.value)})`;
   }
-  if (meta.booleanStrategy && typeof filter.value === 'boolean') {
-    switch (meta.booleanStrategy) {
-      case 'arrayNonEmpty':
-        // OData v4 collection lambda: /any() with no predicate checks the
-        // collection is non-empty. The real field (e.g. PoolFeatures) is
-        // an array, not a boolean — there is no "PoolYN"-style flag.
-        return filter.value ? `${fieldName}/any()` : `not ${fieldName}/any()`;
-      case 'numericPositive':
-        // Proxy a boolean concept (e.g. "has a garage") via a real numeric
-        // field (e.g. ParkingTotal) DDF actually exposes.
-        return filter.value ? `${fieldName} gt 0` : `${fieldName} eq 0`;
-    }
-  }
+
   return `${fieldName} ${operatorToOData(filter.operator)} ${formatValue(filter.value)}`;
 }
 
@@ -127,15 +144,33 @@ export function translateToUrl(query: DdfStructuredQuery, options: TranslatorOpt
     return options.baseUrl;
   }
 
-  // Only the VALUE is percent-encoded (spaces, quotes, etc.). The KEY is left
-  // literal on purpose: OData reserves "$filter", "$top", etc. and some
+  // KEY is left literal: OData reserves "$filter", "$top", etc. and some
   // gateways match query option names before URL-decoding them, so an
   // encoded key ("%24filter") is silently ignored or 404s even though the
   // $ character is perfectly legal, unencoded, in a URI query component.
+  //
+  // VALUE: minimally escaped, not run through encodeURIComponent. DDF's
+  // gateway does not reliably decode %XX sequences back to their original
+  // characters before matching/parsing — confirmed empirically for "$"
+  // and space. Rather than keep discovering more characters that need to
+  // stay literal one at a time, only escape what would actually break the
+  // URL/query-string's structure if left raw: "%" itself (ambiguous
+  // otherwise), "&" (would be read as a new query parameter), "#" (starts
+  // a URL fragment), and newlines. Everything else — spaces, quotes,
+  // slashes, colons, commas, parens — stays exactly as generated.
   const queryString = params
-    .map(([key, value]) => `${key}=${encodeURIComponent(value)}`)
+    .map(([key, value]) => `${key}=${minimalUrlValueEscape(value)}`)
     .join('&');
 
   const separator = options.baseUrl.includes('?') ? '&' : '?';
   return `${options.baseUrl}${separator}${queryString}`;
+}
+
+function minimalUrlValueEscape(value: string): string {
+  return value
+    .replace(/%/g, '%25') // must run first, or it would double-escape the others below
+    .replace(/&/g, '%26')
+    .replace(/#/g, '%23')
+    .replace(/\r/g, '%0D')
+    .replace(/\n/g, '%0A');
 }

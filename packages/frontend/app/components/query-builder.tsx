@@ -36,7 +36,7 @@ export function QueryBuilder() {
             DDF · Natural Language Query Builder
           </p>
           <h1 className="font-display text-4xl leading-tight mb-3">
-            Describe the listing you want.
+            Describe the listing(s) you want.
             <br />
             We&apos;ll draft the instrument.
           </h1>

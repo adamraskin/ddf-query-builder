@@ -4,8 +4,6 @@ import { createLmStudioClient } from '../../llm/client';
 import { GraphState } from '../state';
 
 /**
- * Milestone 5 — Extract Node.
- *
  * Sends the natural-language query + generated system prompt to LM Studio
  * and asks for structured output matching the loose query shape. Handles
  * the three documented failure modes: invalid JSON, empty output, and
