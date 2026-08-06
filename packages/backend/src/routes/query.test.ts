@@ -160,7 +160,7 @@ describe('POST /api/run-url', () => {
     vi.stubGlobal('fetch', fetchMock);
   }
 
-  it('semantic ranking: re-ranks listings by PublicRemarks similarity when a prompt and an embedding model are provided', async () => {
+  it('semantic ranking: re-ranks listings by PublicRemarks similarity to the unsupported concepts', async () => {
     mockDdfFetch(
       JSON.stringify({
         value: [
@@ -180,7 +180,7 @@ describe('POST /api/run-url', () => {
     const app = createApp();
     const res = await request(app)
       .post('/api/run-url')
-      .send({ url: 'https://ddfapi.realtor.ca/odata/v1/Property?$top=5', prompt: 'quiet street' });
+      .send({ url: 'https://ddfapi.realtor.ca/odata/v1/Property?$top=5', unsupported: ['walkable', 'quiet street'] });
 
     expect(res.status).toBe(200);
     expect(res.body.data.rankingUnavailable).toBeUndefined();
@@ -198,7 +198,7 @@ describe('POST /api/run-url', () => {
     const app = createApp();
     const res = await request(app)
       .post('/api/run-url')
-      .send({ url: 'https://ddfapi.realtor.ca/odata/v1/Property?$top=5', prompt: 'quiet street' });
+      .send({ url: 'https://ddfapi.realtor.ca/odata/v1/Property?$top=5', unsupported: ['walkable'] });
 
     expect(res.status).toBe(200);
     expect(res.body.data.ranked).toBeUndefined();
@@ -217,14 +217,32 @@ describe('POST /api/run-url', () => {
     const app = createApp();
     const res = await request(app)
       .post('/api/run-url')
-      .send({ url: 'https://ddfapi.realtor.ca/odata/v1/Property?$top=5', prompt: 'quiet street' });
+      .send({ url: 'https://ddfapi.realtor.ca/odata/v1/Property?$top=5', unsupported: ['walkable'] });
 
     expect(res.status).toBe(200);
     expect(res.body.data.ranked).toBeUndefined();
     expect(res.body.data.rankingUnavailable).toContain('not a recognizable DDF listings payload');
   });
 
-  it('semantic ranking: not attempted at all when no prompt is sent', async () => {
+  it('semantic ranking: skipped with a distinct note when there are no unsupported concepts (filters already cover everything)', async () => {
+    mockDdfFetch(JSON.stringify({ value: [{ ListingKey: '1', PublicRemarks: 'text' }] }));
+    createLmStudioEmbeddingsMock.mockReturnValue({
+      embedQuery: vi.fn(),
+      embedDocuments: vi.fn(),
+    });
+
+    const app = createApp();
+    const res = await request(app)
+      .post('/api/run-url')
+      .send({ url: 'https://ddfapi.realtor.ca/odata/v1/Property?$top=5', unsupported: [] });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.ranked).toBeUndefined();
+    expect(res.body.data.rankingUnavailable).toContain('nothing left to refine by');
+    expect(createLmStudioEmbeddingsMock).not.toHaveBeenCalled();
+  });
+
+  it('semantic ranking: same "nothing to refine by" note when unsupported is omitted entirely', async () => {
     mockDdfFetch(JSON.stringify({ value: [{ ListingKey: '1', PublicRemarks: 'text' }] }));
     createLmStudioEmbeddingsMock.mockReturnValue({
       embedQuery: vi.fn(),
@@ -236,7 +254,7 @@ describe('POST /api/run-url', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.data.ranked).toBeUndefined();
-    expect(res.body.data.rankingUnavailable).toBeUndefined();
+    expect(res.body.data.rankingUnavailable).toContain('nothing left to refine by');
     expect(createLmStudioEmbeddingsMock).not.toHaveBeenCalled();
   });
 });

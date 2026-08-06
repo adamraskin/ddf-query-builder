@@ -89,4 +89,29 @@ describe('rankByPublicRemarks', () => {
     expect(embeddings.embedQuery).not.toHaveBeenCalled();
     expect(embeddings.embedDocuments).not.toHaveBeenCalled();
   });
+
+  it('regression: strips C0 control bytes from PublicRemarks before embedding (seen in live DDF QA data, crashed the local embedding server)', async () => {
+    const rawRemarks = 'Listed in beautiful \x1cGrates Cove\x1d; property with a view.';
+    const sanitized = 'Listed in beautiful Grates Cove; property with a view.';
+    const listings = [{ ListingKey: '1', PublicRemarks: rawRemarks }];
+    const embeddings = fakeEmbeddings({ prompt: [1, 0], [sanitized]: [1, 0] });
+
+    const ranked = await rankByPublicRemarks('prompt', listings, embeddings);
+
+    expect(embeddings.embedDocuments).toHaveBeenCalledWith([sanitized]);
+    expect(ranked[0].score).not.toBeNull();
+  });
+
+  it('regression: a listing whose PublicRemarks is only control bytes is treated as having no usable remarks', async () => {
+    const embeddings = fakeEmbeddings({});
+    const ranked = await rankByPublicRemarks('prompt', [{ ListingKey: '1', PublicRemarks: '\x1c\x1d' }], embeddings);
+    expect(ranked).toEqual([{ rank: 1, score: null, listing: { ListingKey: '1', PublicRemarks: '\x1c\x1d' } }]);
+    expect(embeddings.embedDocuments).not.toHaveBeenCalled();
+  });
+
+  it('sanitizes the query text too, not just PublicRemarks', async () => {
+    const embeddings = fakeEmbeddings({ 'walkable street': [1, 0], text: [1, 0] });
+    await rankByPublicRemarks('walkable\x1c street', [{ ListingKey: '1', PublicRemarks: 'text' }], embeddings);
+    expect(embeddings.embedQuery).toHaveBeenCalledWith('walkable street');
+  });
 });

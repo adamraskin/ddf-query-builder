@@ -58,12 +58,12 @@ export async function submitQuery(prompt: string): Promise<QueryResponse> {
   }
 }
 
-export async function runGeneratedUrl(url: string, prompt: string): Promise<RunUrlResponse> {
+export async function runGeneratedUrl(url: string, unsupported: string[]): Promise<RunUrlResponse> {
   try {
     const res = await fetch(`${API_BASE_URL}/api/run-url`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url, prompt }),
+      body: JSON.stringify({ url, unsupported }),
     });
     const body = (await res.json()) as RunUrlResponse;
     return body;

@@ -26,7 +26,7 @@ function formatBody(body: string, contentType: string | null): string {
   return body;
 }
 
-export function UrlPanel({ url, prompt }: { url: string; prompt: string }) {
+export function UrlPanel({ url, unsupported }: { url: string; unsupported: string[] }) {
   const [copied, setCopied] = useState(false);
   const [running, setRunning] = useState(false);
   const [runResult, setRunResult] = useState<RunResult | null>(null);
@@ -45,7 +45,7 @@ export function UrlPanel({ url, prompt }: { url: string; prompt: string }) {
     setRunning(true);
     setRunResult(null);
 
-    const response = await runGeneratedUrl(url, prompt);
+    const response = await runGeneratedUrl(url, unsupported);
 
     if (response.ok) {
       setRunResult({
@@ -107,7 +107,7 @@ export function UrlPanel({ url, prompt }: { url: string; prompt: string }) {
             {runResult.ranked && (
               <div className="flex flex-col gap-2 mt-2">
                 <span className="font-mono text-xs uppercase tracking-wide text-ink-600">
-                  Ranked by relevance to your prompt
+                  Ranked by relevance to: {unsupported.join(', ')}
                 </span>
                 <RankedResults ranked={runResult.ranked} />
               </div>

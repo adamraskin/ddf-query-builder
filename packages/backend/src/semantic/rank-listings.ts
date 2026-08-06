@@ -26,10 +26,26 @@ export function extractListings(body: string): unknown[] | null {
   return Array.isArray(value) ? value : null;
 }
 
+/**
+ * Real DDF text (PublicRemarks especially) sometimes carries raw C0
+ * control bytes as encoding artifacts — e.g. curly quotes mangled into
+ * \x1C/\x1D (File/Group Separator) observed in live DDF QA data. These
+ * aren't valid content and have caused the local embedding server to
+ * return a bare 500 with no useful error body, so they're stripped before
+ * anything gets sent to the embeddings API rather than trusting
+ * third-party text to be clean.
+ */
+function sanitizeForEmbedding(text: string): string {
+  // eslint-disable-next-line no-control-regex
+  return text.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '').trim();
+}
+
 function getPublicRemarks(listing: unknown): string | undefined {
   if (typeof listing !== 'object' || listing === null) return undefined;
   const remarks = (listing as { PublicRemarks?: unknown }).PublicRemarks;
-  return typeof remarks === 'string' && remarks.trim().length > 0 ? remarks : undefined;
+  if (typeof remarks !== 'string') return undefined;
+  const sanitized = sanitizeForEmbedding(remarks);
+  return sanitized.length > 0 ? sanitized : undefined;
 }
 
 /**
@@ -57,10 +73,12 @@ export async function rankByPublicRemarks(
   let scored: { listing: unknown; score: number }[] = [];
 
   if (withRemarks.length > 0) {
-    const [queryEmbedding, remarkEmbeddings] = await Promise.all([
-      embeddings.embedQuery(prompt),
-      embeddings.embedDocuments(withRemarks.map((r) => r.remarks)),
-    ]);
+    // Sequential, not Promise.all: two concurrent requests to a not-yet-
+    // warm local embedding model (LM Studio loads it on first use) has
+    // been observed to crash the server outright — see embeddings.ts.
+    // Sequencing them means at most one request ever hits a cold model.
+    const queryEmbedding = await embeddings.embedQuery(sanitizeForEmbedding(prompt));
+    const remarkEmbeddings = await embeddings.embedDocuments(withRemarks.map((r) => r.remarks));
 
     scored = withRemarks
       .map(({ listing }, i) => ({ listing, score: cosineSimilarity(queryEmbedding, remarkEmbeddings[i]) }))

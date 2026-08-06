@@ -23,17 +23,24 @@ const RequestBodySchema = z.object({
 
 /**
  * Best-effort: re-ranks the DDF response body by PublicRemarks similarity
- * to the prompt. Never throws — any failure (no embedding model
- * configured, body isn't a listings response, embedding call failed)
- * degrades to a rankingUnavailable note rather than breaking /run-url's
- * base response. Returns {} when ranking wasn't requested at all (no
- * prompt sent).
+ * to the concepts the extractor couldn't turn into a hard filter (e.g.
+ * "walkable", "recently renovated"). Hard filters already narrow the
+ * result set to everything expressible in the schema — semantic search
+ * only makes sense for what's left over. If there's nothing left over,
+ * there's nothing to refine by, so ranking is skipped (not treated as a
+ * failure — the query already fully expressed the user's intent).
+ *
+ * Never throws — any failure (no embedding model configured, body isn't a
+ * listings response, embedding call failed) degrades to a
+ * rankingUnavailable note rather than breaking /run-url's base response.
  */
 async function tryRankByPublicRemarks(
-  prompt: string | undefined,
+  unsupported: string[] | undefined,
   body: string,
 ): Promise<{ ranked?: Awaited<ReturnType<typeof rankByPublicRemarks>>; rankingUnavailable?: string }> {
-  if (!prompt) return {};
+  if (!unsupported || unsupported.length === 0) {
+    return { rankingUnavailable: 'All criteria were captured by filters — nothing left to refine by.' };
+  }
 
   const embeddings = createLmStudioEmbeddings();
   if (!embeddings) {
@@ -46,7 +53,8 @@ async function tryRankByPublicRemarks(
   }
 
   try {
-    return { ranked: await rankByPublicRemarks(prompt, listings, embeddings) };
+    const semanticQuery = unsupported.join('; ');
+    return { ranked: await rankByPublicRemarks(semanticQuery, listings, embeddings) };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     return { rankingUnavailable: `Semantic ranking failed: ${message}` };
@@ -98,7 +106,7 @@ router.post('/query', async (req: Request, res: Response) => {
 
 router.post('/run-url', async (req: Request, res: Response) => {
   const parsedBody = z
-    .object({ url: z.string().url(), prompt: z.string().optional() })
+    .object({ url: z.string().url(), unsupported: z.array(z.string()).optional() })
     .safeParse(req.body);
   if (!parsedBody.success) {
     return res.status(400).json({
@@ -136,7 +144,7 @@ router.post('/run-url', async (req: Request, res: Response) => {
     });
     const body = await response.text();
 
-    const { ranked, rankingUnavailable } = await tryRankByPublicRemarks(parsedBody.data.prompt, body);
+    const { ranked, rankingUnavailable } = await tryRankByPublicRemarks(parsedBody.data.unsupported, body);
 
     return res.status(200).json({
       ok: true,
