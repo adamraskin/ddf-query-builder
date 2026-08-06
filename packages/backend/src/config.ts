@@ -19,14 +19,11 @@ export const config = {
   },
   ddfBaseUrl: required('DDF_BASE_URL', 'https://ddfapi.realtor.ca/odata/v1/Property'),
   /**
-   * OAuth credentials for the /run-url execution feature. These are
-   * genuinely optional here — no fallback, no forced throw at startup —
-   * so the app still works for anyone just using the URL-builder feature
-   * without DDF API credentials configured. The /run-url handler checks
-   * for their presence itself and returns a clear error if they're
-   * missing, instead of silently sending empty strings to CREA's identity
-   * endpoint (required(name, '') would never actually throw, since '' is
-   * not undefined — that was the bug).
+   * OAuth credentials for the /run-url execution feature. Genuinely
+   * optional — no fallback, no forced throw at startup — so the app still
+   * works for anyone using just the URL-builder feature without DDF API
+   * credentials configured. The /run-url handler checks for their
+   * presence itself and returns a clear error if they're missing.
    */
   ddf: {
     clientId: process.env.DDF_CLIENT_ID,

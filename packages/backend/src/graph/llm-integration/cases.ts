@@ -7,12 +7,12 @@ export interface LlmTestCase {
 }
 
 /**
- * Real-world prompts, mostly mined from test.md (the project's original
- * prompt -> URL worksheet). Expectations are deliberately loose where the
- * "right" mapping is genuinely ambiguous (e.g. "residential"/"commercial"
- * don't correspond to a single allowed PropertySubType value) and tight
- * where a past bug is being specifically regression-tested (condo ->
- * CommonInterest, cottage -> ArchitecturalStyle, soft preferences, "or"
+ * Real-world prompts, mostly mined from test.md. Expectations are
+ * deliberately loose where the "right" mapping is genuinely ambiguous
+ * (e.g. "residential"/"commercial" don't correspond to a single allowed
+ * PropertySubType value) and tight where a specific mapping is being
+ * checked (condo -> CommonInterest, cottage -> ArchitecturalStyle, soft
+ * preferences, "or"
  * handling, half-bathrooms).
  */
 export const LLM_TEST_CASES: LlmTestCase[] = [

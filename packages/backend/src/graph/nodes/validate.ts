@@ -5,7 +5,7 @@ import { GraphState } from '../state';
  * Re-validates the extracted output against the strict schema (field
  * exists, operator allowed for that field, value type matches, enum
  * values respected). This is where hallucinated fields/operators/values
- * from the LLM (Risk #4) get caught before they ever reach the translator.
+ * from the LLM get caught before they ever reach the translator.
  */
 export function validateNode(state: GraphState): Partial<GraphState> {
   if (state.error) {

@@ -5,8 +5,6 @@ import { buildQueryGraph } from '../graph/build-graph';
 import { getDdfAccessToken, DdfConfigError, DdfTokenError } from '../ddf/ddf-token';
 
 /**
- * Milestone 6 — expose the graph through Express.
- *
  * POST /api/query
  * body: { "prompt": "3 bedroom houses in Ottawa under 500k" }
  *

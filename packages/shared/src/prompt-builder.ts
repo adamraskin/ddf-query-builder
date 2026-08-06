@@ -3,8 +3,7 @@ import { DDF_FIELDS, DDF_OPERATORS, DdfFieldMetadata } from './ddf-metadata';
 /**
  * The system prompt is generated entirely from the DDF metadata registry
  * (ddf-metadata.ts). Nothing about fields or operators is hardcoded here,
- * so adding/removing a field automatically updates the prompt (Risk #3:
- * prompt drift).
+ * so adding/removing a field automatically updates the prompt.
  */
 
 function describeField(field: DdfFieldMetadata): string {

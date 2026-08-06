@@ -2,11 +2,9 @@ import { DdfFilter, DdfOrderBy, DdfPagination, DdfStructuredQuery } from './ddf-
 import { getFieldMetadata } from './ddf-metadata';
 
 /**
- * Milestone 3 — Translator.
- *
  * Converts a validated DdfStructuredQuery into a real DDF OData URL.
- * This module has zero AI/LLM dependency: any valid JSON contract
- * produces a valid DDF URL, deterministically.
+ * Deterministic — no LLM dependency: any valid JSON contract produces a
+ * valid DDF URL.
  */
 
 export interface TranslatorOptions {
@@ -57,26 +55,16 @@ export function buildFilterClause(filter: DdfFilter): string {
   }
   const fieldName = meta.ddfField;
 
-  // ⚠️ UNVERIFIED against DDF specifically. "/any(...)" is standard OData
-  // v4 collection-lambda syntax (used generally across OData APIs to
-  // filter array-typed fields), but that's a spec-conformance assumption,
-  // not something confirmed in DDF's own docs. Given DDF has already
-  // shown gateway behavior that deviates from strict OData/URI spec
-  // elsewhere ($filter needing a literal "$", spaces needing to stay
-  // literal), there's a real chance this either isn't supported at all or
-  // needs different syntax. Test directly against the real endpoint
-  // before relying on Pool/Waterfront/Garage/ArchitecturalStyle filters.
-  //
   // Boolean concept backed by a real array field, checked against a
-  // curated whitelist of confirmed real enum values (e.g. Garage ->
-  // ParkingFeatures contains one of ['Garage','Attached Garage',...]).
+  // curated whitelist of real enum values (e.g. Garage -> ParkingFeatures
+  // contains one of ['Garage','Attached Garage',...]).
   if (meta.arrayOneOf && typeof filter.value === 'boolean') {
     const predicate = meta.arrayOneOf.map((v) => `f eq ${formatValue(v)}`).join(' or ');
     return filter.value ? `${fieldName}/any(f: ${predicate})` : `not ${fieldName}/any(f: ${predicate})`;
   }
 
   // String/enum field where the real DDF field is itself a collection
-  // (e.g. ArchitecturalStyle). Same "/any()" caveat as above applies.
+  // (e.g. ArchitecturalStyle).
   if (meta.arrayField) {
     if (filter.operator === 'contains') {
       return `${fieldName}/any(f: contains(f, ${formatValue(filter.value)}))`;
@@ -144,20 +132,17 @@ export function translateToUrl(query: DdfStructuredQuery, options: TranslatorOpt
     return options.baseUrl;
   }
 
-  // KEY is left literal: OData reserves "$filter", "$top", etc. and some
-  // gateways match query option names before URL-decoding them, so an
-  // encoded key ("%24filter") is silently ignored or 404s even though the
-  // $ character is perfectly legal, unencoded, in a URI query component.
+  // KEY is left literal: OData reserves "$filter", "$top", etc., and DDF's
+  // gateway matches query option names before URL-decoding them, so an
+  // encoded key ("%24filter") is silently ignored or 404s.
   //
-  // VALUE: minimally escaped, not run through encodeURIComponent. DDF's
-  // gateway does not reliably decode %XX sequences back to their original
-  // characters before matching/parsing — confirmed empirically for "$"
-  // and space. Rather than keep discovering more characters that need to
-  // stay literal one at a time, only escape what would actually break the
-  // URL/query-string's structure if left raw: "%" itself (ambiguous
-  // otherwise), "&" (would be read as a new query parameter), "#" (starts
-  // a URL fragment), and newlines. Everything else — spaces, quotes,
-  // slashes, colons, commas, parens — stays exactly as generated.
+  // VALUE is minimally escaped, not run through encodeURIComponent — DDF's
+  // gateway doesn't reliably decode %XX sequences back to their original
+  // characters before matching/parsing (notably for "$" and space). Only
+  // characters that would break the URL/query-string's structure if left
+  // raw are escaped: "%" itself (ambiguous otherwise), "&" (new query
+  // parameter), "#" (URL fragment), and newlines. Everything else — spaces,
+  // quotes, slashes, colons, commas, parens — stays exactly as generated.
   const queryString = params
     .map(([key, value]) => `${key}=${minimalUrlValueEscape(value)}`)
     .join('&');

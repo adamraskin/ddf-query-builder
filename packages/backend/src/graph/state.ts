@@ -1,10 +1,7 @@
 import { Annotation } from '@langchain/langgraph';
 import { DdfStructuredQuery } from '@ddf/shared';
 
-/**
- * Kept flat and small on purpose (Risk #6: LangGraph overengineering).
- * Three nodes only: Extract -> Validate -> Translate.
- */
+/** Three nodes only: Extract -> Validate -> Translate. */
 export const GraphStateAnnotation = Annotation.Root({
   /** The user's original natural-language request. */
   input: Annotation<string>(),

@@ -6,9 +6,9 @@ import { GraphState } from '../state';
 /**
  * Sends the natural-language query + generated system prompt to LM Studio
  * and asks for structured output matching the loose query shape. Handles
- * the three documented failure modes: invalid JSON, empty output, and
- * malformed/incomplete responses. Any failure is recorded on state.error
- * rather than thrown, so the graph can end gracefully.
+ * invalid JSON, empty output, and malformed responses by recording the
+ * failure on state.error rather than throwing, so the graph can end
+ * gracefully.
  */
 export async function extractNode(state: GraphState): Promise<Partial<GraphState>> {
   if (!state.input || state.input.trim().length === 0) {

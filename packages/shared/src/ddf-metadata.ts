@@ -1,13 +1,12 @@
 import { DdfDataType } from './types';
 
 /**
- * This registry is the single source of truth for every field the system
- * understands. The prompt builder, the structured-output
- * schema (Milestone 5), and the translator (Milestone 3) all derive from
- * this file so that adding a field never requires editing prompts by hand.
+ * Single source of truth for every field the system understands. The
+ * prompt builder, structured-output schema, and translator all derive
+ * from this file, so adding a field never requires editing prompts by hand.
  */
 
-/** Operators supported by the MVP translator. Kept intentionally small (Risk #2). */
+/** Operators supported by the translator. */
 export const DDF_OPERATORS = ['eq', 'gt', 'gte', 'lt', 'lte', 'contains'] as const;
 export type DdfOperator = (typeof DDF_OPERATORS)[number];
 
@@ -23,9 +22,9 @@ export interface DdfFieldMetadata {
   operators: readonly DdfOperator[];
   /**
    * Defaults to true. Some real DDF fields exist and are readable, but DDF
-   * rejects them outright in $filter (confirmed live, not just guessed) —
-   * distinct from "no operator works", since the field itself is still a
-   * legitimate concept to describe to the LLM, just not a filterable one.
+   * rejects them outright in $filter — distinct from "no operator works",
+   * since the field itself is still a legitimate concept to describe to
+   * the LLM, just not a filterable one.
    */
   filterable?: boolean;
   description: string;
@@ -41,17 +40,16 @@ export interface DdfFieldMetadata {
   integerOnly?: boolean;
   /**
    * dataType 'boolean' concepts (Pool, Waterfront, Garage) backed by a real
-   * array/enum field, using a curated whitelist of confirmed real enum
-   * values (from the actual EDMX schema — not a guess). true -> the array
-   * contains ANY of these values; false -> none of them.
+   * array/enum field, using a curated whitelist of real enum values. true
+   * -> the array contains ANY of these values; false -> none of them.
    *   e.g. Garage -> ParkingFeatures, checked against
    *   ['Garage','Attached Garage',...] specifically (ParkingFeatures also
    *   contains many non-garage values like 'Street'/'RV'/'Boat House', so
    *   "any element present" would be wrong — this checks for the
    *   garage-specific values only).
    *
-   * ⚠️ Translates to OData v4 collection-lambda syntax ("/any(...)"),
-   * which is UNVERIFIED against DDF specifically — see translator.ts.
+   * Translates to OData v4 collection-lambda syntax ("/any(...)") — see
+   * translator.ts.
    */
   arrayOneOf?: readonly string[];
   /**
@@ -59,8 +57,6 @@ export interface DdfFieldMetadata {
    * ArchitecturalStyle is "Array of Strings"). eq/contains need OData
    * collection-lambda syntax ("Field/any(f: f eq 'X')") instead of a
    * direct comparison, which isn't valid against a collection.
-   *
-   * ⚠️ Same "/any()" caveat as arrayOneOf above — unverified against DDF.
    */
   arrayField?: boolean;
 }
@@ -85,8 +81,7 @@ export const DDF_FIELDS: readonly DdfFieldMetadata[] = [
   {
     key: 'PropertyType',
     displayName: 'Property Type',
-    // Real field is PropertySubType. Confirmed against the real EDMX enum
-    // schema — these are the actual 13 values, not a guess.
+    // Real field is PropertySubType.
     ddfField: 'PropertySubType',
     dataType: 'string',
     operators: OPS.equalityOnly,
@@ -111,10 +106,8 @@ export const DDF_FIELDS: readonly DdfFieldMetadata[] = [
   {
     key: 'CommonInterest',
     displayName: 'Ownership Structure',
-    // Condo is an OWNERSHIP structure, not a physical property type — this
-    // is the real field for it, separate from PropertyType/PropertySubType.
-    // "Condo" was previously (incorrectly) attempted against PropertyType,
-    // where it doesn't exist; "Condo/Strata" is the real CommonInterest value.
+    // Ownership structure (condo/strata vs. freehold), distinct from
+    // PropertyType/PropertySubType (physical/use classification).
     ddfField: 'CommonInterest',
     dataType: 'string',
     operators: OPS.equalityOnly,
@@ -189,9 +182,9 @@ export const DDF_FIELDS: readonly DdfFieldMetadata[] = [
     key: 'Pool',
     displayName: 'Has Pool',
     // Real field is PoolFeatures (array of enum strings). Checked against
-    // a curated whitelist of confirmed real PoolFeatures values that
-    // clearly indicate an actual pool exists. Excludes ambiguous entries
-    // ("Pool equipment" alone, "Unknown").
+    // a curated whitelist of PoolFeatures values that clearly indicate an
+    // actual pool exists. Excludes ambiguous entries ("Pool equipment"
+    // alone, "Unknown").
     ddfField: 'PoolFeatures',
     dataType: 'boolean',
     operators: OPS.boolean,
@@ -258,10 +251,8 @@ export const DDF_FIELDS: readonly DdfFieldMetadata[] = [
   {
     key: 'ArchitecturalStyle',
     displayName: 'Architectural Style',
-    // Real array field. This is the correct home for style descriptors
-    // like "cottage" or "bungalow" — confirmed real values, e.g. "Cottage"
-    // is a real ArchitecturalStyle value (this is the actual fix for the
-    // earlier bug where the model invented PropertyType="Cottage").
+    // Real array field; the correct home for style descriptors like
+    // "cottage" or "bungalow" (not PropertyType).
     ddfField: 'ArchitecturalStyle',
     dataType: 'string',
     operators: OPS.equalityOnly,
@@ -303,10 +294,9 @@ export const DDF_FIELDS: readonly DdfFieldMetadata[] = [
     displayName: 'Listing Status',
     ddfField: 'StandardStatus',
     dataType: 'string',
-    // Confirmed live against the real DDF API (not just the EDMX schema):
     // DDF rejects StandardStatus in $filter outright — "The property
     // 'StandardStatus' cannot be used in the $filter query option." (400).
-    // Not just an unsupported operator, the field can't be filtered on at
+    // Not just an unsupported operator: the field can't be filtered on at
     // all, so it gets no operators and is marked non-filterable.
     operators: [],
     filterable: false,

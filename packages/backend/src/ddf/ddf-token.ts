@@ -2,14 +2,10 @@ import { config } from '../config';
 
 /**
  * DDF API OAuth token acquisition, used by the /run-url execution feature.
- *
- * Two things this fixes relative to the first draft:
- * - Config presence is checked explicitly and throws a clear, typed error
- *   instead of silently sending an empty client_id/client_secret to CREA's
- *   identity endpoint (required(name, '') never actually threw, since ''
- *   is not undefined — that was the bug).
- * - The token is cached in memory until shortly before it expires, so
- *   /run-url doesn't request a fresh token on every single call.
+ * Config presence is checked explicitly and throws a clear, typed error
+ * instead of silently sending an empty client_id/client_secret to CREA's
+ * identity endpoint. The token is cached in memory until shortly before it
+ * expires, so /run-url doesn't request a fresh token on every call.
  */
 
 export class DdfConfigError extends Error {}

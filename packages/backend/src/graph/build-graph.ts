@@ -6,9 +6,8 @@ import { translateNode } from './nodes/translate';
 
 /**
  * Extract -> Validate -> Translate, in a straight line. No conditional
- * branching beyond "did an earlier node already fail" (each node is a
- * no-op if state.error is already set), which keeps the MVP graph to
- * exactly three nodes per the plan's risk mitigation.
+ * branching beyond "did an earlier node already fail" — each node is a
+ * no-op if state.error is already set.
  */
 export function buildQueryGraph() {
   const graph = new StateGraph(GraphStateAnnotation)

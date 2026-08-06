@@ -5,11 +5,7 @@ import { isDdfConfigured, sleep, fetchDdfStatus } from './ddf-fetch';
 
 /**
  * Fires every real field/operator combination the translator can produce
- * at the actual DDF API ($top=1, one request at a time, ~1s apart) to
- * settle the "UNVERIFIED against DDF" syntax warnings in translator.ts and
- * ddf-metadata.ts (the OData "/any(...)" collection-lambda syntax used for
- * Pool/Waterfront/Garage/ArchitecturalStyle has never actually been fired
- * at DDF, only asserted against in local string-shape tests). No LLM
+ * at the actual DDF API ($top=1, one request at a time, ~1s apart). No LLM
  * involved — this is pure translator output vs. the real API.
  *
  * Opt-in only (`npm run test:ddf-live`): needs DDF OAuth creds configured,
