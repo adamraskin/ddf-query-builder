@@ -16,6 +16,13 @@ export const config = {
     baseUrl: required('LM_STUDIO_BASE_URL', 'http://localhost:1234/v1'),
     apiKey: process.env.LM_STUDIO_API_KEY ?? 'lm-studio',
     model: required('LM_STUDIO_MODEL', 'local-model'),
+    /**
+     * Optional: a model loaded in LM Studio specifically as an embedding
+     * model (e.g. nomic-embed-text-v1.5), used for semantic ranking of
+     * PublicRemarks. The chat model above cannot serve /v1/embeddings.
+     * Genuinely optional — semantic ranking is skipped when unset.
+     */
+    embeddingModel: process.env.LM_STUDIO_EMBEDDING_MODEL,
   },
   ddfBaseUrl: required('DDF_BASE_URL', 'https://ddfapi.realtor.ca/odata/v1/Property'),
   /**

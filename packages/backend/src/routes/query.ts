@@ -3,6 +3,8 @@ import { z } from 'zod';
 import { config } from '../config';
 import { buildQueryGraph } from '../graph/build-graph';
 import { getDdfAccessToken, DdfConfigError, DdfTokenError } from '../ddf/ddf-token';
+import { createLmStudioEmbeddings } from '../llm/embeddings';
+import { extractListings, rankByPublicRemarks } from '../semantic/rank-listings';
 
 /**
  * Milestone 6 — expose the graph through Express.
@@ -18,6 +20,38 @@ const graph = buildQueryGraph();
 const RequestBodySchema = z.object({
   prompt: z.string().min(1, 'prompt is required'),
 });
+
+/**
+ * Best-effort: re-ranks the DDF response body by PublicRemarks similarity
+ * to the prompt. Never throws — any failure (no embedding model
+ * configured, body isn't a listings response, embedding call failed)
+ * degrades to a rankingUnavailable note rather than breaking /run-url's
+ * base response. Returns {} when ranking wasn't requested at all (no
+ * prompt sent).
+ */
+async function tryRankByPublicRemarks(
+  prompt: string | undefined,
+  body: string,
+): Promise<{ ranked?: Awaited<ReturnType<typeof rankByPublicRemarks>>; rankingUnavailable?: string }> {
+  if (!prompt) return {};
+
+  const embeddings = createLmStudioEmbeddings();
+  if (!embeddings) {
+    return { rankingUnavailable: 'No embedding model configured (set LM_STUDIO_EMBEDDING_MODEL).' };
+  }
+
+  const listings = extractListings(body);
+  if (!listings) {
+    return { rankingUnavailable: 'Response was not a recognizable DDF listings payload.' };
+  }
+
+  try {
+    return { ranked: await rankByPublicRemarks(prompt, listings, embeddings) };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { rankingUnavailable: `Semantic ranking failed: ${message}` };
+  }
+}
 
 router.post('/query', async (req: Request, res: Response) => {
   const parsedBody = RequestBodySchema.safeParse(req.body);
@@ -63,7 +97,9 @@ router.post('/query', async (req: Request, res: Response) => {
 });
 
 router.post('/run-url', async (req: Request, res: Response) => {
-  const parsedBody = z.object({ url: z.string().url() }).safeParse(req.body);
+  const parsedBody = z
+    .object({ url: z.string().url(), prompt: z.string().optional() })
+    .safeParse(req.body);
   if (!parsedBody.success) {
     return res.status(400).json({
       ok: false,
@@ -100,12 +136,16 @@ router.post('/run-url', async (req: Request, res: Response) => {
     });
     const body = await response.text();
 
+    const { ranked, rankingUnavailable } = await tryRankByPublicRemarks(parsedBody.data.prompt, body);
+
     return res.status(200).json({
       ok: true,
       data: {
         status: response.status,
         contentType: response.headers.get('content-type'),
         body,
+        ...(ranked ? { ranked } : {}),
+        ...(rankingUnavailable ? { rankingUnavailable } : {}),
       },
     });
   } catch (err) {
