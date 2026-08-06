@@ -3,6 +3,8 @@ import { z } from 'zod';
 import { config } from '../config';
 import { buildQueryGraph } from '../graph/build-graph';
 import { getDdfAccessToken, DdfConfigError, DdfTokenError } from '../ddf/ddf-token';
+import { createLmStudioEmbeddings } from '../llm/embeddings';
+import { extractListings, rankByPublicRemarks } from '../semantic/rank-listings';
 
 /**
  * POST /api/query
@@ -16,6 +18,46 @@ const graph = buildQueryGraph();
 const RequestBodySchema = z.object({
   prompt: z.string().min(1, 'prompt is required'),
 });
+
+/**
+ * Best-effort: re-ranks the DDF response body by PublicRemarks similarity
+ * to the concepts the extractor couldn't turn into a hard filter (e.g.
+ * "walkable", "recently renovated"). Hard filters already narrow the
+ * result set to everything expressible in the schema — semantic search
+ * only makes sense for what's left over. If there's nothing left over,
+ * there's nothing to refine by, so ranking is skipped (not treated as a
+ * failure — the query already fully expressed the user's intent).
+ *
+ * Never throws — any failure (no embedding model configured, body isn't a
+ * listings response, embedding call failed) degrades to a
+ * rankingUnavailable note rather than breaking /run-url's base response.
+ */
+async function tryRankByPublicRemarks(
+  unsupported: string[] | undefined,
+  body: string,
+): Promise<{ ranked?: Awaited<ReturnType<typeof rankByPublicRemarks>>; rankingUnavailable?: string }> {
+  if (!unsupported || unsupported.length === 0) {
+    return { rankingUnavailable: 'All criteria were captured by filters — nothing left to refine by.' };
+  }
+
+  const embeddings = createLmStudioEmbeddings();
+  if (!embeddings) {
+    return { rankingUnavailable: 'No embedding model configured (set LM_STUDIO_EMBEDDING_MODEL).' };
+  }
+
+  const listings = extractListings(body);
+  if (!listings) {
+    return { rankingUnavailable: 'Response was not a recognizable DDF listings payload.' };
+  }
+
+  try {
+    const semanticQuery = unsupported.join('; ');
+    return { ranked: await rankByPublicRemarks(semanticQuery, listings, embeddings) };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { rankingUnavailable: `Semantic ranking failed: ${message}` };
+  }
+}
 
 router.post('/query', async (req: Request, res: Response) => {
   const parsedBody = RequestBodySchema.safeParse(req.body);
@@ -61,7 +103,9 @@ router.post('/query', async (req: Request, res: Response) => {
 });
 
 router.post('/run-url', async (req: Request, res: Response) => {
-  const parsedBody = z.object({ url: z.string().url() }).safeParse(req.body);
+  const parsedBody = z
+    .object({ url: z.string().url(), unsupported: z.array(z.string()).optional() })
+    .safeParse(req.body);
   if (!parsedBody.success) {
     return res.status(400).json({
       ok: false,
@@ -98,12 +142,16 @@ router.post('/run-url', async (req: Request, res: Response) => {
     });
     const body = await response.text();
 
+    const { ranked, rankingUnavailable } = await tryRankByPublicRemarks(parsedBody.data.unsupported, body);
+
     return res.status(200).json({
       ok: true,
       data: {
         status: response.status,
         contentType: response.headers.get('content-type'),
         body,
+        ...(ranked ? { ranked } : {}),
+        ...(rankingUnavailable ? { rankingUnavailable } : {}),
       },
     });
   } catch (err) {

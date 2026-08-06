@@ -107,7 +107,7 @@ export function QueryBuilder() {
           {status === 'success' && result && result.ok && (
             <>
               <FilterTicket query={result.data.query} />
-              <UrlPanel url={result.data.url} />
+              <UrlPanel url={result.data.url} unsupported={result.data.query.unsupported} />
             </>
           )}
         </section>

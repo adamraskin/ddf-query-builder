@@ -16,6 +16,12 @@ vi.mock('../graph/build-graph', () => ({
   buildQueryGraph: vi.fn(() => ({ invoke: invokeMock })),
 }));
 
+const createLmStudioEmbeddingsMock = vi.fn();
+
+vi.mock('../llm/embeddings', () => ({
+  createLmStudioEmbeddings: () => createLmStudioEmbeddingsMock(),
+}));
+
 const { createApp } = await import('../app');
 const { _resetDdfTokenCacheForTests } = await import('../ddf/ddf-token');
 
@@ -64,6 +70,7 @@ describe('POST /api/run-url', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     _resetDdfTokenCacheForTests();
+    createLmStudioEmbeddingsMock.mockReset();
   });
 
   it('requests an access token and sends it as a bearer header', async () => {
@@ -135,6 +142,120 @@ describe('POST /api/run-url', () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
     const tokenCalls = fetchMock.mock.calls.filter((c) => c[0] === 'https://identity.crea.ca/connect/token');
     expect(tokenCalls).toHaveLength(1);
+  });
+
+  function mockDdfFetch(bodyText: string) {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: vi.fn().mockResolvedValue({ access_token: 'test-token', expires_in: 300 }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: { get: (name: string) => (name === 'content-type' ? 'application/json' : null) },
+        text: vi.fn().mockResolvedValue(bodyText),
+      });
+    vi.stubGlobal('fetch', fetchMock);
+  }
+
+  it('semantic ranking: re-ranks listings by PublicRemarks similarity to the unsupported concepts', async () => {
+    mockDdfFetch(
+      JSON.stringify({
+        value: [
+          { ListingKey: 'far', PublicRemarks: 'far text' },
+          { ListingKey: 'close', PublicRemarks: 'close text' },
+        ],
+      }),
+    );
+    createLmStudioEmbeddingsMock.mockReturnValue({
+      embedQuery: vi.fn().mockResolvedValue([1, 0]),
+      embedDocuments: vi.fn().mockResolvedValue([
+        [0, 1], // far
+        [0.9, 0.1], // close
+      ]),
+    });
+
+    const app = createApp();
+    const res = await request(app)
+      .post('/api/run-url')
+      .send({ url: 'https://ddfapi.realtor.ca/odata/v1/Property?$top=5', unsupported: ['walkable', 'quiet street'] });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.rankingUnavailable).toBeUndefined();
+    expect(res.body.data.ranked.map((r: { listing: { ListingKey: string } }) => r.listing.ListingKey)).toEqual([
+      'close',
+      'far',
+    ]);
+    expect(res.body.data.status).toBe(200); // base response untouched
+  });
+
+  it('semantic ranking: skipped (with a note) when no embedding model is configured, base response unaffected', async () => {
+    mockDdfFetch(JSON.stringify({ value: [{ ListingKey: '1', PublicRemarks: 'text' }] }));
+    createLmStudioEmbeddingsMock.mockReturnValue(null);
+
+    const app = createApp();
+    const res = await request(app)
+      .post('/api/run-url')
+      .send({ url: 'https://ddfapi.realtor.ca/odata/v1/Property?$top=5', unsupported: ['walkable'] });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.ranked).toBeUndefined();
+    expect(res.body.data.rankingUnavailable).toContain('No embedding model configured');
+    expect(res.body.data.status).toBe(200);
+    expect(res.body.data.body).toContain('PublicRemarks');
+  });
+
+  it('semantic ranking: skipped silently-noted when the response body is not a listings payload', async () => {
+    mockDdfFetch('{"error":"not found"}');
+    createLmStudioEmbeddingsMock.mockReturnValue({
+      embedQuery: vi.fn(),
+      embedDocuments: vi.fn(),
+    });
+
+    const app = createApp();
+    const res = await request(app)
+      .post('/api/run-url')
+      .send({ url: 'https://ddfapi.realtor.ca/odata/v1/Property?$top=5', unsupported: ['walkable'] });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.ranked).toBeUndefined();
+    expect(res.body.data.rankingUnavailable).toContain('not a recognizable DDF listings payload');
+  });
+
+  it('semantic ranking: skipped with a distinct note when there are no unsupported concepts (filters already cover everything)', async () => {
+    mockDdfFetch(JSON.stringify({ value: [{ ListingKey: '1', PublicRemarks: 'text' }] }));
+    createLmStudioEmbeddingsMock.mockReturnValue({
+      embedQuery: vi.fn(),
+      embedDocuments: vi.fn(),
+    });
+
+    const app = createApp();
+    const res = await request(app)
+      .post('/api/run-url')
+      .send({ url: 'https://ddfapi.realtor.ca/odata/v1/Property?$top=5', unsupported: [] });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.ranked).toBeUndefined();
+    expect(res.body.data.rankingUnavailable).toContain('nothing left to refine by');
+    expect(createLmStudioEmbeddingsMock).not.toHaveBeenCalled();
+  });
+
+  it('semantic ranking: same "nothing to refine by" note when unsupported is omitted entirely', async () => {
+    mockDdfFetch(JSON.stringify({ value: [{ ListingKey: '1', PublicRemarks: 'text' }] }));
+    createLmStudioEmbeddingsMock.mockReturnValue({
+      embedQuery: vi.fn(),
+      embedDocuments: vi.fn(),
+    });
+
+    const app = createApp();
+    const res = await request(app).post('/api/run-url').send({ url: 'https://ddfapi.realtor.ca/odata/v1/Property?$top=5' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.ranked).toBeUndefined();
+    expect(res.body.data.rankingUnavailable).toContain('nothing left to refine by');
+    expect(createLmStudioEmbeddingsMock).not.toHaveBeenCalled();
   });
 });
 

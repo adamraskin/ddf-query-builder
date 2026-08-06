@@ -1,10 +1,18 @@
 'use client';
 
 import { useState } from 'react';
-import { runGeneratedUrl } from '@/lib/api-client';
+import { runGeneratedUrl, type RankedListing } from '@/lib/api-client';
+import { RankedResults } from './ranked-results';
 
 type RunResult =
-  | { type: 'success'; status: number; contentType: string | null; body: string }
+  | {
+      type: 'success';
+      status: number;
+      contentType: string | null;
+      body: string;
+      ranked?: RankedListing[];
+      rankingUnavailable?: string;
+    }
   | { type: 'error'; message: string };
 
 function formatBody(body: string, contentType: string | null): string {
@@ -18,7 +26,7 @@ function formatBody(body: string, contentType: string | null): string {
   return body;
 }
 
-export function UrlPanel({ url }: { url: string }) {
+export function UrlPanel({ url, unsupported }: { url: string; unsupported: string[] }) {
   const [copied, setCopied] = useState(false);
   const [running, setRunning] = useState(false);
   const [runResult, setRunResult] = useState<RunResult | null>(null);
@@ -37,7 +45,7 @@ export function UrlPanel({ url }: { url: string }) {
     setRunning(true);
     setRunResult(null);
 
-    const response = await runGeneratedUrl(url);
+    const response = await runGeneratedUrl(url, unsupported);
 
     if (response.ok) {
       setRunResult({
@@ -45,6 +53,8 @@ export function UrlPanel({ url }: { url: string }) {
         status: response.data.status,
         contentType: response.data.contentType,
         body: response.data.body,
+        ranked: response.data.ranked,
+        rankingUnavailable: response.data.rankingUnavailable,
       });
     } else {
       setRunResult({ type: 'error', message: response.error.message });
@@ -93,6 +103,20 @@ export function UrlPanel({ url }: { url: string }) {
             <pre className="max-h-96 overflow-auto bg-ink-950/60 border border-ink-600/40 rounded-sm px-4 py-3 text-xs font-mono whitespace-pre-wrap break-all text-paper-dim">
               {formatBody(runResult.body, runResult.contentType) || '(empty response body)'}
             </pre>
+
+            {runResult.ranked && (
+              <div className="flex flex-col gap-2 mt-2">
+                <span className="font-mono text-xs uppercase tracking-wide text-ink-600">
+                  Ranked by relevance to: {unsupported.join(', ')}
+                </span>
+                <RankedResults ranked={runResult.ranked} />
+              </div>
+            )}
+            {runResult.rankingUnavailable && (
+              <p className="text-xs text-ink-600 italic mt-1">
+                Semantic ranking skipped: {runResult.rankingUnavailable}
+              </p>
+            )}
           </div>
         )}
       </div>
