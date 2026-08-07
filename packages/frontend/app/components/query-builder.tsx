@@ -38,10 +38,10 @@ export function QueryBuilder() {
           <h1 className="font-display text-4xl leading-tight mb-3">
             Describe the listing(s) you want.
             <br />
-            We&apos;ll draft the instrument.
+            We&apos;ll give you a URL.
           </h1>
           <p className="text-ink-400 max-w-xl">
-            Type a search the way you&apos;d say it out loud. It comes back as a structured
+            Type a search the way you&apos;d describe it. It comes back as a structured
             filter set and a ready-to-use DDF OData URL.
           </p>
         </header>

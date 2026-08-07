@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'DDF Query Instrument',
+  title: 'DDF Natural Language Query Builder',
   description: 'Turn a plain-English real estate search into a DDF query.',
 };
 
